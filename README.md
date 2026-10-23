@@ -1,6 +1,6 @@
 # Claude skills for Power BI
 
-Six [Claude skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) I built for my own Power BI work: auditing DAX measures, documenting PBIP projects, building a semantic model and designing reports.
+Seven [Claude skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) I built for my own Power BI work: auditing DAX measures, documenting PBIP projects, building a semantic model and designing reports.
 
 > **Language:** the skills are written in Danish, and several triggers are Danish phrases. Claude can still answer in English if you ask it to.
 
@@ -14,8 +14,11 @@ Six [Claude skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skill
 | [measure-analysis-power-bi](skills/measure-analysis-power-bi/) | Static analysis of a PBIP project: lists every DAX measure, marks it as used, dependency-only or orphan, flags 15+ DAX anti-patterns and writes a PDF report | Auditing, cleaning up or optimising DAX measures, finding unused measures |
 | [measure-excel-power-bi](skills/measure-excel-power-bi/) | Excel inventory of all DAX measures with usage, dependencies, anti-patterns, suggested rewrites and DAX Studio verification queries | You want the measure inventory as a spreadsheet |
 | [pbip-governance](skills/pbip-governance/) | Parses TMDL and PBIR to produce governance and handover documentation: data lineage, possible PII columns, RLS inventory and an Azure DevOps wiki bundle | Documenting or auditing a PBIP project, lineage, PII or RLS reviews |
+| [pbip-layout](.claude/skills/pbip-layout/) | Applies a saved executive dashboard layout (dark KPI tiles, trend with forecast, monthly cards, category bars, top-10 table) to a PBIP project, maps it to the project's own measures and creates missing ones | You write `anvend "layout.md"` |
 
-`measure-analysis-power-bi` and `measure-excel-power-bi` describe helper scripts that are not included here. Claude builds that functionality from the description in each SKILL.md instead. `pbip-governance` includes its scripts.
+`measure-analysis-power-bi` and `measure-excel-power-bi` describe helper scripts that are not included here. Claude builds that functionality from the description in each SKILL.md instead. `pbip-governance` and `pbip-layout` include their scripts.
+
+`pbip-layout` lives in `.claude/skills/`, so Claude Code loads it automatically in any session that opens this repository (also Claude Code on the web and mobile).
 
 ## Install
 
