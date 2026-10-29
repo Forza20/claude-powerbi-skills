@@ -365,18 +365,44 @@
 
 document.getElementById('today').textContent = new Date().toISOString().slice(0,10);
 
-// Generic PII heuristic (DA + EN)
-const PII_PATTERNS = [
-  'email','e-mail','mail','phone','telefon','mobil','tlf',
-  'cpr','ssn','passport','pas','cvr','vat',
-  'name','navn','fornavn','efternavn','firstname','lastname','fullname',
-  'address','adresse','postnr','zip','postal','city','by',
-  'dob','birth','fødsel','fodsel','birthday',
-  'ip','ipaddress','deviceid','userid',
-  'iban','account','kontonummer','kortnummer','cardnumber',
-  'salary','løn','lon','income','indkomst',
-  'gender','køn','kon','ethnic','religion','nationality','nationalitet'
-];
+// PII heuristic (DA + EN) - same rules as pii_reason() in scripts/parse_pbip.py.
+// Column names are split into words, so `name` does not hit product_name and `ip` does
+// not hit shipping_date. `name` and `city` only count in a person context (see below).
+const PII_WORDS = new Set(["accountnumber", "address", "adresse", "birth", "birthdate", "birthday", "brugerid", "brugernavn", "cardnumber", "civilstand", "contact", "cpr", "cprnr", "cprnummer", "creditcard", "dateofbirth", "deviceid", "dob", "efternavn", "email", "ethnic", "ethnicity", "firstname", "fodsel", "fodselsdato", "foedsel", "foedselsdato", "fornavn", "fullname", "fødsel", "fødselsdato", "gade", "gender", "iban", "income", "indkomst", "ip", "ipaddress", "koen", "kontakt", "kontaktperson", "kontonummer", "kortnummer", "køn", "lastname", "loen", "løn", "mail", "marital", "maritalstatus", "mellemnavn", "middlename", "mobil", "mobile", "nationalitet", "nationality", "pasnummer", "passport", "phone", "postal", "postalcode", "postcode", "postnr", "postnummer", "religion", "salary", "sex", "ssn", "street", "streetname", "surname", "telefon", "telefonnummer", "telephone", "tlf", "userid", "username", "zip", "zipcode"]);
+const PII_PERSON_ROLES = new Set(["ansvarlig", "ejer", "manager", "owner", "saelger", "salesperson", "sælger"]);
+const PII_NAME_WORDS = new Set(["name", "navn"]);
+const PII_PERSON_WORDS = new Set(["borger", "bruger", "client", "contact", "customer", "ejer", "elev", "employee", "first", "full", "klient", "kontakt", "kunde", "last", "manager", "medarbejder", "medlem", "member", "middle", "owner", "patient", "person", "student", "user"]);
+const PII_NOT_PERSON = new Set(["afdeling", "ark", "brand", "butik", "by", "campaign", "category", "channel", "city", "column", "company", "country", "dag", "day", "department", "event", "fil", "file", "firma", "group", "gruppe", "kampagne", "kanal", "kategori", "land", "leverandor", "leverandør", "maaned", "month", "måned", "product", "produkt", "project", "projekt", "region", "role", "rolle", "segment", "sheet", "shop", "site", "status", "store", "subcategory", "supplier", "table", "team", "type", "uge", "vendor", "virksomhed", "week"]);
+const PII_PERSON_LOCATION = new Set(["by", "city", "town"]);
+const PII_PERSON_TABLE_WORDS = new Set(["bruger", "brugere", "client", "clients", "contact", "contacts", "customer", "customers", "employee", "employees", "klient", "klienter", "kontakt", "kontakter", "kunde", "kunder", "medarbejder", "medarbejdere", "medlem", "medlemmer", "member", "members", "patient", "patients", "people", "person", "personer", "persons", "user", "users"]);
+
+function piiNameWords(name) {
+  let s = String(name || '');
+  s = s.replace(/([a-zæøå0-9])([A-ZÆØÅ])/g, '$1 $2');
+  s = s.replace(/([A-ZÆØÅ]+)([A-ZÆØÅ][a-zæøå])/g, '$1 $2');
+  return s.toLowerCase().split(/[^0-9a-zæøå]+/).filter(Boolean);
+}
+
+// Why a column looks like personal data ('' when it does not). Heuristic only.
+function piiReason(colName, tableName) {
+  const words = piiNameWords(colName);
+  if (!words.length) return '';
+  const cands = [...words];
+  for (let i = 0; i + 1 < words.length; i++) cands.push(words[i] + words[i + 1]);
+  for (let i = 0; i + 2 < words.length; i++) cands.push(words[i] + words[i + 1] + words[i + 2]);
+  for (const w of cands) if (PII_WORDS.has(w)) return w;
+  const tableWords = new Set(tableName ? piiNameWords(tableName) : []);
+  const personTable = [...tableWords].some(w => PII_PERSON_TABLE_WORDS.has(w));
+  const ws = new Set(words);
+  const has = set => [...ws].some(w => set.has(w));
+  if (has(PII_PERSON_ROLES) && !has(PII_NOT_PERSON)) return [...ws].find(w => PII_PERSON_ROLES.has(w));
+  if (has(PII_NAME_WORDS) && !has(PII_NOT_PERSON)) {
+    const others = [...ws].filter(w => !PII_NAME_WORDS.has(w)).length;
+    if (has(PII_PERSON_WORDS) || (personTable && others <= 1)) return 'navn på person';
+  }
+  if (personTable && has(PII_PERSON_LOCATION) && ws.size <= 2) return 'by (persontabel)';
+  return '';
+}
 
 const state = {
   files: {},           // filename -> text
@@ -973,13 +999,12 @@ function renderOverview() {
 
 function countPII() {
   let n = 0;
-  for (const t of state.model.tables) for (const c of t.columns) if (isPII(c.name)) n++;
+  for (const t of state.model.tables) for (const c of t.columns) if (isPII(c.name, t.name)) n++;
   return n;
 }
 
-function isPII(colName) {
-  const lower = colName.toLowerCase();
-  return PII_PATTERNS.some(p => lower.includes(p));
+function isPII(colName, tableName) {
+  return piiReason(colName, tableName) !== '';
 }
 
 function renderGovernance() {
@@ -988,8 +1013,8 @@ function renderGovernance() {
   const piiRows = [];
   for (const t of m.tables) {
     for (const c of t.columns) {
-      if (isPII(c.name)) {
-        const matched = PII_PATTERNS.find(p => c.name.toLowerCase().includes(p));
+      if (isPII(c.name, t.name)) {
+        const matched = piiReason(c.name, t.name);
         piiRows.push(`<tr>
           <td class="mono">${escapeHtml(t.name)}</td>
           <td class="mono">${escapeHtml(c.name)} <span class="badge badge-pii">${escapeHtml(matched)}</span></td>
@@ -1343,8 +1368,8 @@ function buildGovernancePage() {
   const m = state.model;
   let md = `# :shield: Governance\n\n[[_TOC_]]\n\n`;
   const piis = [];
-  for (const t of m.tables) for (const c of t.columns) if (isPII(c.name)) {
-    const matched = PII_PATTERNS.find(p => c.name.toLowerCase().includes(p));
+  for (const t of m.tables) for (const c of t.columns) if (isPII(c.name, t.name)) {
+    const matched = piiReason(c.name, t.name);
     piis.push({ table: t.name, col: c.name, type: c.dataType, hidden: c.isHidden, matched });
   }
 
@@ -1448,7 +1473,7 @@ function buildTablePage(t) {
       if (c.isKey) flags.push(':key: key');
       if (c.isHidden) flags.push(':lock: hidden');
       if (c.isCalculated) flags.push(':abacus: calculated');
-      if (isPII(c.name)) flags.push(':warning: **PII?**');
+      if (isPII(c.name, t.name)) flags.push(':warning: **PII?**');
       md += `| \`${c.name}\` | ${c.dataType || '-'} | ${flags.join(' · ') || '-'} |\n`;
     }
     md += `\n`;
@@ -1592,7 +1617,7 @@ function buildMarkdown() {
   md += `## Governance\n\n`;
   md += `### Potential PII columns\n\n`;
   const piis = [];
-  for (const t of m.tables) for (const c of t.columns) if (isPII(c.name)) piis.push({table:t.name,col:c.name,type:c.dataType,hidden:c.isHidden});
+  for (const t of m.tables) for (const c of t.columns) if (isPII(c.name, t.name)) piis.push({table:t.name,col:c.name,type:c.dataType,hidden:c.isHidden});
   if (piis.length === 0) md += `_None matched._\n\n`;
   else {
     md += `| Table | Column | Type | Visibility |\n|---|---|---|---|\n`;

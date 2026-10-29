@@ -1,6 +1,6 @@
 # PII Pattern Reference (DA/EN)
 
-`parse_pbip.py` flags column names as **potential** personal data with `pii_reason(column, table)`
+`parse_pbip.py` (and the browser fallback `assets/pbip-inspector.html`, which uses the same rules) flags column names as **potential** personal data with `pii_reason(column, table)`
 (and `is_pii(column, table)`). Matches are heuristic: always review manually and say
 "potential PII" or "PII candidate", never that a column IS PII.
 
@@ -40,4 +40,3 @@ instead), `cvr` and `vat` (company identifiers).
 - Free-text columns (notes, comments) can contain personal data without a telling name.
 - `country`, `region` and `credit_limit` are not flagged. In B2C data they can still identify a person in combination.
 - `company_name` is not flagged; for sole proprietorships it can be personal data.
-- The browser fallback `assets/pbip-inspector.html` still uses the old substring list.
