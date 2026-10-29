@@ -6,8 +6,15 @@ Usage:
     python3 parse_pbip.py <pbip_folder_path> [--output /path/to/output.json]
 
 Outputs JSON to stdout (or to --output file) with keys:
-    - model: {name, tables, relationships, roles, dataSources}
+    - model: {name, tables, relationships, roles, expressions, dataSources}
     - report: {pages}
+
+Beyond the basic inventory the parser also adds (used by pbip-catalog):
+    - TMDL `///` descriptions on tables, columns, measures and expressions
+    - Power Query steps per partition/shared query and the queries it references
+    - Column lineage through Power Query steps (`column.lineage`, `column.origin`)
+    - DAX dependencies per measure / calculated column (`dependencies`)
+    - Relationship cardinality and every field a PBIR visual binds to (`fieldRefs`)
 """
 
 import json
@@ -86,7 +93,8 @@ def identify_m_source(m_expr):
     ]
 
     for pat, kind, fmt in patterns:
-        match = re.search(pat, m_expr, re.IGNORECASE)
+        # (?<![\w.]) keeps e.g. `Sql.Database` from matching inside `PostgreSQL.Database`
+        match = re.search(r'(?<![\w.])' + pat, m_expr, re.IGNORECASE)
         if match:
             groups = match.groups()
             return {'kind': kind, 'details': fmt(groups)}
@@ -94,200 +102,722 @@ def identify_m_source(m_expr):
     return {'kind': 'Other', 'details': '(unrecognized)'}
 
 
-def parse_table_tmdl(text):
-    """Parse a single table .tmdl file into a table dict."""
-    lines = text.split('\n')
-    header_match = re.search(r'^\s*table\s+(.+?)\s*$', text, re.MULTILINE)
-    if not header_match:
-        return None
+# ---------------------------------------------------------------------------
+# Generic TMDL block parser
+# ---------------------------------------------------------------------------
+# TMDL is indentation based: an object is declared as `<kind> <name>` (optionally
+# `= <expression>`), its properties sit one level deeper, and a multi-line
+# expression sits one level deeper than the properties. Descriptions are `///`
+# lines placed directly ABOVE the object they describe.
 
+TMDL_OBJECT_KINDS = {
+    'table', 'column', 'measure', 'partition', 'hierarchy', 'level',
+    'calculationGroup', 'calculationItem', 'annotation', 'expression',
+    'relationship', 'role', 'tablePermission', 'columnPermission',
+    'changedProperty', 'extendedProperty', 'perspective', 'perspectiveTable',
+    'perspectiveColumn', 'perspectiveMeasure', 'culture', 'linguisticMetadata',
+    'calendar', 'formatStringDefinition', 'detailRowsDefinition', 'model',
+    'database', 'dataSource', 'queryGroup', 'member', 'function',
+}
+
+
+def _flag(v):
+    return v is True or str(v).strip().lower() == 'true'
+
+
+def _line_levels(lines):
+    """Indentation level per line (tabs = 1 level, spaces grouped by the file's unit)."""
+    space_counts = [len(l) - len(l.lstrip(' ')) for l in lines
+                    if l.startswith(' ') and l.strip()]
+    unit = min([c for c in space_counts if c > 0], default=4)
+    levels = []
+    for l in lines:
+        ws = l[:len(l) - len(l.lstrip('\t '))]
+        levels.append(ws.count('\t') + ws.count(' ') // unit)
+    return levels
+
+
+def _dedent(buf):
+    while buf and not buf[-1].strip():
+        buf.pop()
+    while buf and not buf[0].strip():
+        buf.pop(0)
+    if not buf:
+        return ''
+    pad = min(len(l) - len(l.lstrip('\t ')) for l in buf if l.strip())
+    return '\n'.join(l[pad:] if len(l) >= pad else l.strip() for l in buf)
+
+
+def _read_expression(lines, levels, i, stop_level):
+    """Read a multi-line expression starting at line i. Stops at the first
+    non-empty line whose level is <= stop_level. Supports ``` fences."""
+    n = len(lines)
+    j = i
+    while j < n and not lines[j].strip():
+        j += 1
+    if j < n and lines[j].strip().startswith('```'):
+        buf = []
+        j += 1
+        while j < n and not lines[j].strip().startswith('```'):
+            buf.append(lines[j])
+            j += 1
+        return _dedent(buf), j + 1
+    buf = []
+    while i < n:
+        if lines[i].strip() and levels[i] <= stop_level:
+            break
+        buf.append(lines[i])
+        i += 1
+    return _dedent(buf), i
+
+
+def _split_decl_name(rest):
+    """`'Name with space' = expr` -> (name, has_equals, inline_expr)."""
+    rest = rest.strip()
+    if rest.startswith("'"):
+        i, buf = 1, []
+        while i < len(rest):
+            ch = rest[i]
+            if ch == "'":
+                if i + 1 < len(rest) and rest[i + 1] == "'":
+                    buf.append("'")
+                    i += 2
+                    continue
+                i += 1
+                break
+            buf.append(ch)
+            i += 1
+        name, tail = ''.join(buf), rest[i:].strip()
+    else:
+        m = re.match(r'([^\s=]+)\s*(.*)$', rest)
+        name, tail = (m.group(1), m.group(2).strip()) if m else (rest, '')
+    if tail.startswith('='):
+        return name, True, tail[1:].strip()
+    return name, False, ''
+
+
+def parse_tmdl_tree(text):
+    """Parse TMDL text into a tree of {kind, name, value, props, children, description}."""
+    lines = text.replace('\r\n', '\n').split('\n')
+    levels = _line_levels(lines)
+    root = {'kind': 'root', 'name': '', 'value': '', 'props': {},
+            'children': [], 'description': ''}
+    stack = [(-1, root)]
+    pending_desc = []
+    i, n = 0, len(lines)
+    while i < n:
+        t = lines[i].strip()
+        d = levels[i]
+        if not t:
+            i += 1
+            continue
+        if t.startswith('///'):
+            pending_desc.append(re.sub(r'^///\s?', '', t))
+            i += 1
+            continue
+        while stack[-1][0] >= d:
+            stack.pop()
+        parent = stack[-1][1]
+        m = re.match(r'^(\w+)\b\s*(.*)$', t)
+        word, rest = (m.group(1), m.group(2)) if m else ('', '')
+        if word == 'ref':
+            pending_desc = []
+            i += 1
+            continue
+        if word in TMDL_OBJECT_KINDS and rest and rest[0] not in ':=':
+            name, has_eq, val = _split_decl_name(rest)
+            node = {'kind': word, 'name': name, 'value': val, 'props': {},
+                    'children': [], 'description': ' '.join(pending_desc).strip()}
+            pending_desc = []
+            i += 1
+            if has_eq and val == '':
+                node['value'], i = _read_expression(lines, levels, i, d + 1)
+            parent['children'].append(node)
+            stack.append((d, node))
+            continue
+        pending_desc = []
+        pm = re.match(r'^(\w+)\s*([:=])\s*(.*)$', t)
+        if pm:
+            key, sep, val = pm.groups()
+            i += 1
+            if sep == '=' and not val.strip():
+                val, i = _read_expression(lines, levels, i, d)
+            parent['props'][key] = val.strip() if sep == ':' else val
+            continue
+        if re.match(r'^\w+$', t):
+            parent['props'][t] = True
+        i += 1
+    return root
+
+
+def _table_from_node(tn):
+    p = tn['props']
     table = {
-        'name': unquote_tmdl(header_match.group(1)),
-        'isHidden': False,
-        'dataCategory': '',
-        'description': '',
+        'name': tn['name'],
+        'isHidden': _flag(p.get('isHidden')),
+        'dataCategory': p.get('dataCategory', ''),
+        'description': tn['description'],
+        'isCalculated': False,
         'columns': [],
         'measures': [],
         'partitions': [],
     }
-
-    i = 0
-    n = len(lines)
-    while i < n:
-        line = lines[i]
-        trimmed = line.strip()
-        indent = len(line) - len(line.lstrip())
-
-        # Top-level table block — capture table-level props
-        if indent == 0 and re.match(r'^table\s', trimmed):
-            i += 1
-            while i < n:
-                l = lines[i]
-                ind = len(l) - len(l.lstrip())
-                t = l.strip()
-                if ind == 0 and t:
-                    break
-                if re.match(r'^isHidden\s*:?\s*true', t, re.IGNORECASE):
-                    table['isHidden'] = True
-                dc = re.match(r'^dataCategory\s*:?\s*(.+)$', t, re.IGNORECASE)
-                if dc:
-                    table['dataCategory'] = dc.group(1).strip()
-                if t.startswith('///'):
-                    table['description'] += re.sub(r'^///\s?', '', t) + ' '
-                # Break on child block start
-                if ind > 0 and re.match(r'^(column|measure|partition|hierarchy|calculationGroup)\s+', t):
-                    break
-                i += 1
-            continue
-
-        # Column block
-        if re.match(r'^column\s+', trimmed):
-            name_match = re.match(r'^column\s+(.+?)\s*(=.*)?$', trimmed)
-            col = {
-                'name': unquote_tmdl(name_match.group(1)) if name_match else '',
-                'dataType': '',
-                'isHidden': False,
-                'isKey': False,
-                'isCalculated': '=' in trimmed,
-            }
-            base = indent
-            i += 1
-            while i < n:
-                l = lines[i]
-                ind = len(l) - len(l.lstrip())
-                t = l.strip()
-                if ind <= base and t:
-                    break
-                dt = re.match(r'^dataType\s*:?\s*(\w+)', t, re.IGNORECASE)
-                if dt:
-                    col['dataType'] = dt.group(1)
-                if re.match(r'^isHidden\s*:?\s*true', t, re.IGNORECASE):
-                    col['isHidden'] = True
-                if re.match(r'^isKey\s*:?\s*true', t, re.IGNORECASE):
-                    col['isKey'] = True
-                i += 1
-            table['columns'].append(col)
-            continue
-
-        # Measure block
-        if re.match(r'^measure\s+', trimmed):
-            m = {
-                'name': '',
-                'expression': '',
-                'displayFolder': '',
-                'description': '',
-                'formatString': '',
-                'isHidden': False,
-            }
-            inline = re.match(r'^measure\s+(.+?)\s*=\s*(.*)$', trimmed)
-            if inline:
-                m['name'] = unquote_tmdl(inline.group(1))
-                m['expression'] = inline.group(2).strip()
-            else:
-                just = re.match(r'^measure\s+(.+?)\s*$', trimmed)
-                if just:
-                    m['name'] = unquote_tmdl(just.group(1))
-            base = indent
-            i += 1
-            expr_lines = [m['expression']] if m['expression'] else []
-            while i < n:
-                l = lines[i]
-                ind = len(l) - len(l.lstrip())
-                t = l.strip()
-                if ind <= base and t:
-                    break
-                df = re.match(r'^displayFolder\s*:?\s*(.+)$', t, re.IGNORECASE)
-                fs = re.match(r'^formatString\s*:?\s*(.+)$', t, re.IGNORECASE)
-                hid = re.match(r'^isHidden\s*:?\s*true', t, re.IGNORECASE)
-                if df:
-                    m['displayFolder'] = df.group(1).strip()
-                    i += 1
-                    continue
-                if t.startswith('///'):
-                    m['description'] += re.sub(r'^///\s?', '', t) + ' '
-                    i += 1
-                    continue
-                if fs:
-                    m['formatString'] = fs.group(1).strip()
-                    i += 1
-                    continue
-                if hid:
-                    m['isHidden'] = True
-                    i += 1
-                    continue
-                # Otherwise treat as DAX expression line
-                if ind > base:
-                    expr_lines.append(l[base + 1:] if len(l) > base + 1 else l.strip())
-                i += 1
-            m['expression'] = '\n'.join(expr_lines).strip()
-            m['expression'] = re.sub(r'^```[\w-]*\n?', '', m['expression'])
-            m['expression'] = re.sub(r'\n?```\s*$', '', m['expression'])
-            table['measures'].append(m)
-            continue
-
-        # Partition block
-        if re.match(r'^partition\s+', trimmed):
-            p = {'name': '', 'mode': 'import', 'mExpression': '', 'sourceType': ''}
-            name_match = re.match(r'^partition\s+(.+?)\s*=\s*(\w+)?', trimmed)
-            if name_match:
-                p['name'] = unquote_tmdl(name_match.group(1))
-                if name_match.group(2):
-                    p['sourceType'] = name_match.group(2)
-            base = indent
-            i += 1
-            m_lines = []
-            in_source = False
-            source_indent = -1
-            while i < n:
-                l = lines[i]
-                ind = len(l) - len(l.lstrip())
-                t = l.strip()
-                if ind <= base and t:
-                    break
-                md = re.match(r'^mode\s*:?\s*(\w+)', t, re.IGNORECASE)
-                if md:
-                    p['mode'] = md.group(1).lower()
-                if re.match(r'^source\s*=', t) or re.match(r'^source\s*$', t):
-                    in_source = True
-                    source_indent = ind
-                    inline_m = re.match(r'^source\s*=\s*(.+)$', t)
-                    if inline_m:
-                        m_lines.append(inline_m.group(1))
-                    i += 1
-                    continue
-                if in_source:
-                    if ind > source_indent:
-                        m_lines.append(l[source_indent + 1:] if len(l) > source_indent + 1 else l.strip())
-                    elif t:
-                        in_source = False
-                i += 1
-            expr = '\n'.join(m_lines).strip()
-            expr = re.sub(r'^```m?\n?', '', expr)
-            expr = re.sub(r'\n?```\s*$', '', expr)
-            p['mExpression'] = expr
-            table['partitions'].append(p)
-            continue
-
-        i += 1
-
-    table['description'] = table['description'].strip()
+    for c in tn['children']:
+        cp = c['props']
+        if c['kind'] == 'column':
+            expr = c['value'] or cp.get('expression', '')
+            table['columns'].append({
+                'name': c['name'],
+                'dataType': cp.get('dataType', ''),
+                'isHidden': _flag(cp.get('isHidden')),
+                'isKey': _flag(cp.get('isKey')),
+                'isCalculated': bool(expr),
+                'expression': expr,
+                'sourceColumn': cp.get('sourceColumn', ''),
+                'formatString': cp.get('formatString', ''),
+                'displayFolder': cp.get('displayFolder', ''),
+                'dataCategory': cp.get('dataCategory', ''),
+                'description': c['description'],
+            })
+        elif c['kind'] == 'measure':
+            table['measures'].append({
+                'name': c['name'],
+                'expression': c['value'],
+                'displayFolder': cp.get('displayFolder', ''),
+                'description': c['description'],
+                'formatString': cp.get('formatString', ''),
+                'isHidden': _flag(cp.get('isHidden')),
+            })
+        elif c['kind'] == 'partition':
+            source_type = (c['value'] or '').strip()
+            table['partitions'].append({
+                'name': c['name'],
+                'mode': str(cp.get('mode', 'import')).lower(),
+                'mExpression': cp.get('source', '') if isinstance(cp.get('source'), str) else '',
+                'sourceType': source_type,
+                'queryGroup': cp.get('queryGroup', ''),
+            })
+            if source_type == 'calculated':
+                table['isCalculated'] = True
     return table
+
+
+def parse_table_tmdl(text):
+    """Parse a single table .tmdl file into a table dict."""
+    tree = parse_tmdl_tree(text)
+    for node in tree['children']:
+        if node['kind'] == 'table':
+            return _table_from_node(node)
+    return None
+
+
+def parse_expressions_tmdl(text):
+    """Shared queries and parameters from expressions.tmdl."""
+    out = []
+    for node in parse_tmdl_tree(text)['children']:
+        if node['kind'] != 'expression':
+            continue
+        value = node['value']
+        is_param = bool(re.search(r'IsParameterQuery\s*=\s*true', value, re.IGNORECASE))
+        literal = ''
+        if is_param:
+            lm = re.match(r'^\s*("(?:[^"]|"")*"|[\w.\-#]+)\s*meta\b', value)
+            literal = lm.group(1) if lm else ''
+        out.append({
+            'name': node['name'],
+            'kind': 'parameter' if is_param else 'query',
+            'mExpression': value,
+            'parameterValue': literal,
+            'description': node['description'],
+            'queryGroup': node['props'].get('queryGroup', ''),
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Power Query (M) analysis: steps, references and column lineage
+# ---------------------------------------------------------------------------
+
+def _strip_m_comments(s):
+    out, i, n = [], 0, len(s)
+    while i < n:
+        ch = s[i]
+        if ch == '"':
+            j = i + 1
+            while j < n:
+                if s[j] == '"':
+                    if j + 1 < n and s[j + 1] == '"':
+                        j += 2
+                        continue
+                    break
+                j += 1
+            out.append(s[i:j + 1])
+            i = j + 1
+        elif s.startswith('//', i):
+            while i < n and s[i] != '\n':
+                i += 1
+        elif s.startswith('/*', i):
+            end = s.find('*/', i + 2)
+            i = n if end < 0 else end + 2
+        else:
+            out.append(ch)
+            i += 1
+    return ''.join(out)
+
+
+def _scan_top_level(s, on_char):
+    """Walk s tracking bracket depth and strings; call on_char(i, depth) outside strings."""
+    depth, i, n = 0, 0, len(s)
+    while i < n:
+        ch = s[i]
+        if ch == '"':
+            j = i + 1
+            while j < n:
+                if s[j] == '"':
+                    if j + 1 < n and s[j + 1] == '"':
+                        j += 2
+                        continue
+                    break
+                j += 1
+            i = j + 1
+            continue
+        if ch in '([{':
+            depth += 1
+        elif ch in ')]}':
+            depth -= 1
+        stop = on_char(i, depth)
+        if stop:
+            return i
+        i += 1
+    return -1
+
+
+def _split_top_level(s, sep=','):
+    parts, last = [], [0]
+
+    def cb(i, depth):
+        if depth == 0 and s[i] == sep:
+            parts.append(s[last[0]:i])
+            last[0] = i + 1
+        return False
+    _scan_top_level(s, cb)
+    parts.append(s[last[0]:])
+    return [p.strip() for p in parts]
+
+
+def _m_ident(s):
+    s = s.strip()
+    m = re.match(r'^#"((?:[^"]|"")*)"$', s)
+    if m:
+        return m.group(1).replace('""', '"')
+    return s
+
+
+def parse_m_steps(m_expr):
+    """Split `let a = ..., b = ... in b` into ([{'name','expression'}], result)."""
+    s = _strip_m_comments(m_expr or '').strip()
+    lm = re.match(r'^let\b', s)
+    if not lm:
+        return [], s
+    body = s[3:]
+    # find the matching top-level `in`, honouring nested let/in
+    words = []
+
+    def cb(i, depth):
+        if depth == 0 and (i == 0 or not (body[i - 1].isalnum() or body[i - 1] in '_.#')):
+            for w in ('let', 'in'):
+                if body.startswith(w, i) and (i + len(w) == len(body) or not (body[i + len(w)].isalnum() or body[i + len(w)] == '_')):
+                    words.append((i, w))
+        return False
+    _scan_top_level(body, cb)
+    nest, in_pos = 0, -1
+    for pos, w in words:
+        if w == 'let':
+            nest += 1
+        elif nest == 0:
+            in_pos = pos
+            break
+        else:
+            nest -= 1
+    if in_pos < 0:
+        return [], s
+    steps_txt, result = body[:in_pos], body[in_pos + 2:].strip()
+    steps = []
+    for part in _split_top_level(steps_txt):
+        if not part:
+            continue
+        sm = re.match(r'^(#"(?:[^"]|"")*"|[^\W\d][\w.]*)\s*=\s*(.*)$', part, re.S)
+        if sm:
+            steps.append({'name': _m_ident(sm.group(1)), 'expression': sm.group(2).strip()})
+    return steps, _m_ident(result)
+
+
+def _m_identifiers(expr):
+    """Identifiers used in an M expression (strings removed)."""
+    s = re.sub(r'"(?:[^"]|"")*"', '""', _strip_m_comments(expr or ''))
+    ids = set(re.findall(r'(?<![\w.#\[])([^\W\d][\w]*)(?![\w.])', s))
+    ids |= {m.replace('""', '"') for m in re.findall(r'#"((?:[^"]|"")*)"', expr or '')}
+    return ids
+
+
+def m_references(expr, known_names, local_names=()):
+    """Other queries/tables an M expression refers to."""
+    used = _m_identifiers(expr)
+    return sorted(n for n in known_names if n in used and n not in local_names)
+
+
+def _parse_call(expr):
+    """`Fn(a, b, c)...` -> ('Fn', ['a','b','c']) or (None, [])."""
+    e = expr.strip()
+    m = re.match(r'^([\w.]+)\s*\(', e)
+    if not m:
+        return None, []
+    start = m.end() - 1
+    end = [-1]
+    sub = e[start:]
+
+    def cb(i, depth):
+        if depth == 0 and sub[i] == ')':
+            end[0] = i
+            return True
+        return False
+    _scan_top_level(sub, cb)
+    inner = sub[1:end[0]] if end[0] > 0 else sub[1:]
+    return m.group(1), _split_top_level(inner)
+
+
+def _m_str(arg):
+    m = re.match(r'^"((?:[^"]|"")*)"$', (arg or '').strip())
+    return m.group(1).replace('""', '"') if m else None
+
+
+def _m_str_list(arg):
+    return [s.replace('""', '"') for s in re.findall(r'"((?:[^"]|"")*)"', arg or '')]
+
+
+def _m_first_strings(arg):
+    """First string of each inner list: {{"a", ...}, {"b", ...}} -> ['a','b']."""
+    return [s.replace('""', '"') for s in re.findall(r'\{\s*"((?:[^"]|"")*)"\s*,', arg or '')]
+
+
+def _m_first_table_arg(arg):
+    """Dig out the table an argument starts from: `{Table.SelectColumns(A, x), B}` -> 'A',
+    `Table.PromoteHeaders(Kilde{[...]}[Data])` -> 'Kilde{[...]}[Data]'."""
+    a = (arg or '').strip()
+    for _ in range(8):
+        if a.startswith('{') and a.endswith('}'):
+            a = _split_top_level(a[1:-1])[0]
+            continue
+        fn, args = _parse_call(a)
+        if fn and args:
+            a = args[0]
+            continue
+        break
+    return a
+
+
+def _m_item_for(arg, col):
+    """The `{"col", ...}` item for one column inside a transform list."""
+    a = (arg or '').strip()
+    if a.startswith('{') and a.endswith('}'):
+        for item in _split_top_level(a[1:-1]):
+            if re.match(r'^\{\s*"' + re.escape(col.replace('"', '""')) + r'"\s*,', item):
+                return item
+    return a
+
+
+def _m_navigation(expr):
+    """`Kilde{[Schema="gold",Item="x"]}[Data]` -> (base, 'gold.x')."""
+    m = re.match(r'^\s*(#"(?:[^"]|"")*"|[^\W\d][\w.]*)\s*\{\s*\[(.*?)\]\s*\}', expr or '', re.S)
+    if not m:
+        return None, ''
+    kv = dict(re.findall(r'(\w+)\s*=\s*"((?:[^"]|"")*)"', m.group(2)))
+    parts = [kv[k] for k in ('Schema', 'Item', 'Name') if k in kv]
+    if 'Kind' in kv and 'Item' in kv:
+        parts = [f"{kv['Item']} ({kv['Kind']})"]
+    return _m_ident(m.group(1)), '.'.join(parts)
+
+
+def substitute_parameters(expr, params):
+    """Replace parameter identifiers with their literal values (for source detection)."""
+    out = expr or ''
+    for name, literal in params.items():
+        if not literal:
+            continue
+        out = re.sub(r'(?<![\w."#])' + re.escape(name) + r'(?![\w"])', lambda _m: literal, out)
+        out = out.replace(f'#"{name}"', literal)
+    return out
+
+
+def trace_m_column(query, column, queries, depth=0):
+    """Follow `column` backwards through the steps of `query` (and the queries it
+    reads from). Returns (events ordered source -> table, origin dict)."""
+    q = queries.get(query)
+    if not q or depth > 10:
+        return [], {'kind': 'unknown', 'query': query, 'column': column}
+    steps = {s['name']: s['expression'] for s in q['steps']}
+    if not steps:
+        # single-expression query (no let/in): treat the whole expression as one step
+        steps = {'__expr__': q['mExpression']}
+        cur = '__expr__'
+    else:
+        cur = q['result']
+    col = column
+    back = []
+    nav_obj = ''
+
+    def ev(action, detail, **extra):
+        back.append({'query': query, 'step': '' if cur == '__expr__' else cur,
+                     'action': action, 'detail': detail, **extra})
+
+    def finish(sub_query=None, sub_col=None, origin=None):
+        mine = list(reversed(back))
+        if sub_query:
+            up, org = trace_m_column(sub_query, sub_col, queries, depth + 1)
+            return up + mine, org
+        return mine, origin
+
+    guard = 0
+    while cur in steps and guard < 500:
+        guard += 1
+        e = steps[cur]
+        fn, args = _parse_call(e)
+        prev = None
+        if args:
+            first = _m_first_table_arg(args[0])
+            if re.match(r'^(#"(?:[^"]|"")*"|[^\W\d][\w.]*)$', first):
+                prev = _m_ident(first)
+            elif _m_navigation(first)[0]:
+                e = first
+        if fn == 'Table.Combine' and args:
+            parts = _split_top_level(args[0].strip()[1:-1]) if args[0].strip().startswith('{') else []
+            if len(parts) > 1:
+                ev('Samlet (append)', ', '.join(_m_first_table_arg(x) for x in parts))
+        if fn == 'Table.AddIndexColumn' and len(args) > 1 and _m_str(args[1]) == col:
+            ev('Indeks/nøgle', f'Fortløbende nummer fra {args[2] if len(args) > 2 else 0}')
+            return finish(origin={'kind': 'computed', 'query': query, 'step': cur, 'column': col})
+        if fn == 'Table.RenameColumns' and len(args) > 1:
+            names = _m_str_list(args[1])
+            for old, new in zip(names[0::2], names[1::2]):
+                if new == col:
+                    ev('Omdøbt', f'{old} → {new}')
+                    col = old
+                    break
+        elif fn == 'Table.AddColumn' and len(args) > 2 and _m_str(args[1]) == col:
+            formula = args[2]
+            ev('Beregnet', formula, inputs=sorted(set(re.findall(r'\[([^\]]+)\]', formula))))
+            return finish(origin={'kind': 'computed', 'query': query, 'step': cur, 'column': col})
+        elif fn == 'Table.DuplicateColumn' and len(args) > 2 and _m_str(args[2]) == col:
+            ev('Kopieret', f'{_m_str(args[1])} → {col}')
+            col = _m_str(args[1]) or col
+        elif fn in ('Table.ExpandTableColumn', 'Table.ExpandRecordColumn') and len(args) > 2:
+            nested = _m_str(args[1])
+            src_cols = _m_str_list(args[2])
+            new_cols = _m_str_list(args[3]) if len(args) > 3 else src_cols
+            if col in new_cols and len(new_cols) == len(src_cols):
+                src_col = src_cols[new_cols.index(col)]
+                joined = None
+                for sname, sexpr in steps.items():
+                    jfn, jargs = _parse_call(sexpr)
+                    if jfn in ('Table.NestedJoin', 'Table.AddJoinColumn') and len(jargs) > 4 \
+                            and _m_str(jargs[4] if jfn == 'Table.NestedJoin' else jargs[3]) == nested:
+                        joined = _m_ident(jargs[2])
+                        break
+                ev('Hentet via join', f'{joined or nested}[{src_col}]' + (f' → {col}' if src_col != col else ''))
+                if joined and joined in queries:
+                    return finish(joined, src_col)
+                return finish(origin={'kind': 'join', 'query': joined or nested, 'column': src_col})
+        elif fn == 'Table.TransformColumns' and len(args) > 1 and col in _m_first_strings(args[1]):
+            ev('Transformeret', _m_item_for(args[1], col))
+        elif fn == 'Table.TransformColumnTypes' and len(args) > 1 and col in _m_first_strings(args[1]):
+            ev('Datatype sat', '')
+        elif fn == 'Table.ReplaceValue' and args and col in _m_str_list(args[-1]):
+            ev('Værdier erstattet', ', '.join(args[1:3]))
+        elif fn == 'Table.Group' and len(args) > 2 and col in _m_first_strings(args[2]):
+            ev('Aggregeret', args[2])
+            return finish(origin={'kind': 'computed', 'query': query, 'step': cur, 'column': col})
+
+        if prev and prev in steps and prev != cur:
+            cur = prev
+            continue
+        if prev and prev in queries and prev != query:
+            return finish(prev, col)
+        bare = _m_ident(e) if re.match(r'^(#"(?:[^"]|"")*"|[^\W\d][\w.]*)$', e.strip()) else None
+        if bare and bare in steps and bare != cur:
+            cur = bare
+            continue
+        if bare and bare in queries and bare != query:
+            if queries[bare]['kind'] == 'table':
+                return finish(bare, col)
+            return finish(origin={'kind': 'source', 'query': bare, 'object': nav_obj,
+                                  'column': col, 'source': resolve_query_source(bare, queries)})
+        base, obj = _m_navigation(e)
+        if base:
+            if obj:
+                ev('Navigation', obj)
+                nav_obj = nav_obj or obj
+            if base in steps and base != cur:
+                cur = base
+                continue
+            if base in queries and queries[base]['kind'] == 'table':
+                return finish(base, col)
+            src = resolve_query_source(base, queries) if base in queries else identify_m_source(e)
+            return finish(origin={'kind': 'source', 'query': base, 'object': nav_obj or obj,
+                                  'column': col, 'source': src})
+        src = identify_m_source(q.get('mResolved', e) if cur == '__expr__' else substitute_parameters(e, q.get('params', {})))
+        kind = 'source' if src['kind'] not in ('Other', 'Unknown') else 'computed'
+        return finish(origin={'kind': kind, 'query': query, 'step': cur, 'column': col,
+                              'object': nav_obj, 'source': src})
+    return finish(origin={'kind': 'unknown', 'query': query, 'column': col})
+
+
+def resolve_query_source(name, queries, seen=None):
+    """Data source behind a query, following references to shared queries."""
+    seen = seen or set()
+    if name in seen or name not in queries:
+        return {'kind': 'Unknown', 'details': '(no expression)'}
+    seen.add(name)
+    q = queries[name]
+    src = identify_m_source(q.get('mResolved', q.get('mExpression', '')))
+    if src['kind'] not in ('Other', 'Unknown'):
+        return src
+    for ref in q.get('references', []):
+        s = resolve_query_source(ref, queries, seen)
+        if s['kind'] not in ('Other', 'Unknown'):
+            return s
+    return src
+
+
+def build_queries(model):
+    """Map every M query (tables + shared expressions) to steps and references."""
+    params = {e['name']: e['parameterValue'] for e in model.get('expressions', [])
+              if e['kind'] == 'parameter'}
+    raw = {}
+    for e in model.get('expressions', []):
+        raw[e['name']] = {'kind': e['kind'], 'mExpression': e['mExpression']}
+    for t in model['tables']:
+        for p in t['partitions']:
+            if p['sourceType'] in ('m', '') and p['mExpression']:
+                raw[t['name']] = {'kind': 'table', 'mExpression': p['mExpression']}
+                break
+    names = set(raw)
+    queries = {}
+    for name, q in raw.items():
+        steps, result = parse_m_steps(q['mExpression'])
+        local = {s['name'] for s in steps}
+        queries[name] = {
+            **q,
+            'steps': steps,
+            'result': result,
+            'params': params,
+            'mResolved': substitute_parameters(q['mExpression'], params),
+            'references': m_references(q['mExpression'], names - {name}, local),
+        }
+    return queries
+
+
+# ---------------------------------------------------------------------------
+# DAX dependencies
+# ---------------------------------------------------------------------------
+
+def _strip_dax(expr):
+    s = re.sub(r'"(?:[^"]|"")*"', '""', expr or '')
+    s = re.sub(r'/\*.*?\*/', ' ', s, flags=re.S)
+    s = re.sub(r'(//|--)[^\n]*', ' ', s)
+    return s
+
+
+def dax_dependencies(expr, measure_index, table_columns):
+    """Measures, columns and tables referenced by a DAX expression.
+    measure_index: {measure_name: table}; table_columns: {table: set(columns)}."""
+    s = _strip_dax(expr)
+    measures, columns, tables = set(), set(), set()
+    spans = []
+    for m in re.finditer(r"('(?:[^']|'')+'|(?<![\w\]])[^\W\d]\w*)\s*\[([^\]]+)\]", s):
+        tname = m.group(1)
+        if tname.startswith("'"):
+            tname = tname[1:-1].replace("''", "'")
+        name = m.group(2).strip()
+        if tname not in table_columns:
+            continue
+        spans.append((m.start(), m.end()))
+        if name in measure_index and name not in table_columns[tname]:
+            measures.add(name)
+        else:
+            columns.add((tname, name))
+    for m in re.finditer(r'\[([^\]]+)\]', s):
+        if any(a <= m.start() < b for a, b in spans):
+            continue
+        name = m.group(1).strip()
+        if name in measure_index:
+            measures.add(name)
+    for tname in table_columns:
+        pat = (r"'" + re.escape(tname.replace("'", "''")) + r"'(?!\s*\[)") if not re.match(r'^[^\W\d]\w*$', tname) \
+            else (r"(?<![\w'\[])" + re.escape(tname) + r"(?![\w'])(?!\s*\[)")
+        if re.search(pat, s):
+            tables.add(tname)
+    return {
+        'measures': sorted(measures),
+        'columns': [{'table': t, 'column': c} for t, c in sorted(columns)],
+        'tables': sorted(tables),
+    }
+
+
+def enrich_model(model):
+    """Add M steps, column lineage and DAX dependencies to a parsed model."""
+    queries = build_queries(model)
+    measure_index = {m['name']: t['name'] for t in model['tables'] for m in t['measures']}
+    table_columns = {t['name']: {c['name'] for c in t['columns']} for t in model['tables']}
+    for t in model['tables']:
+        q = queries.get(t['name'])
+        for p in t['partitions']:
+            if q and p['mExpression'] == q['mExpression']:
+                p['steps'] = q['steps']
+                p['references'] = q['references']
+                p['resolvedSource'] = resolve_query_source(t['name'], queries)
+        for c in t['columns']:
+            if c.get('isCalculated'):
+                c['dependencies'] = dax_dependencies(c.get('expression', ''), measure_index, table_columns)
+            elif q and c.get('sourceColumn'):
+                events, origin = trace_m_column(t['name'], c['sourceColumn'], queries)
+                c['lineage'] = events
+                c['origin'] = origin
+        for m in t['measures']:
+            m['dependencies'] = dax_dependencies(m.get('expression', ''), measure_index, table_columns)
+        if t.get('isCalculated'):
+            calc = next((p for p in t['partitions'] if p['sourceType'] == 'calculated'), None)
+            if calc:
+                t['dependencies'] = dax_dependencies(calc['mExpression'], measure_index, table_columns)
+    for e in model.get('expressions', []):
+        q = queries.get(e['name'], {})
+        e['steps'] = q.get('steps', [])
+        e['references'] = q.get('references', [])
+        if e['kind'] == 'query':
+            e['resolvedSource'] = resolve_query_source(e['name'], queries)
+    return model
 
 
 def parse_relationships_tmdl(text):
     rels = []
     regex = re.compile(
-        r'relationship\s+[\w-]+\s*\n((?:[ \t]+.*\n?)+)',
+        r"relationship\s+('[^']+'|[\w-]+)\s*\n((?:[ \t]+.*\n?|\s*\n)+)",
         re.MULTILINE
     )
     for match in regex.finditer(text):
-        body = match.group(1)
+        body = match.group(2)
         rel = {
+            'name': unquote_tmdl(match.group(1)),
             'from': {},
             'to': {},
             'crossFilter': 'singleDirection',
             'active': True,
+            'fromCardinality': 'many',
+            'toCardinality': 'one',
         }
+        for side in ('from', 'to'):
+            cm = re.search(side + r'Cardinality\s*:?\s*(\w+)', body)
+            if cm:
+                rel[side + 'Cardinality'] = cm.group(1)
         fc = re.search(r'fromColumn\s*:?\s*(.+)', body)
         tc = re.search(r'toColumn\s*:?\s*(.+)', body)
         cf = re.search(r'crossFilteringBehavior\s*:?\s*(\w+)', body)
@@ -429,6 +959,7 @@ def parse_model(pbip_root):
         'tables': [],
         'relationships': [],
         'roles': [],
+        'expressions': [],
         'dataSources': [],
     }
 
@@ -456,6 +987,13 @@ def parse_model(pbip_root):
                 t = parse_table_tmdl(text)
                 if t:
                     model['tables'].append(t)
+
+        # Shared queries and parameters
+        expr_file = definition_dir / 'expressions.tmdl'
+        if expr_file.is_file():
+            model['expressions'] = parse_expressions_tmdl(
+                expr_file.read_text(encoding='utf-8')
+            )
 
         # Relationships
         rel_file = definition_dir / 'relationships.tmdl'
@@ -489,11 +1027,13 @@ def parse_model(pbip_root):
     else:
         raise RuntimeError(f'Neither definition/ nor model.bim found in {sm_dir}')
 
-    # Data source inventory
+    enrich_model(model)
+
+    # Data source inventory (shared queries and parameters are followed)
     sources = {}
     for t in model['tables']:
         for p in t['partitions']:
-            src = identify_m_source(p['mExpression'])
+            src = p.get('resolvedSource') or identify_m_source(p['mExpression'])
             key = f"{src['kind']}::{src['details']}"
             if key not in sources:
                 sources[key] = {**src, 'tables': []}
@@ -545,7 +1085,69 @@ def extract_pbir_visual(vo):
             field = extract_field_from_expr(pr)
             if field:
                 visual['fields'].append(field)
+    visual['id'] = vo.get('name', '')
+    pos = vo.get('position', {})
+    visual['position'] = {k: pos.get(k) for k in ('x', 'y', 'width', 'height') if k in pos}
+    visual['fieldRefs'] = collect_field_refs(vo)
     return visual
+
+
+def collect_field_refs(vo):
+    """Every measure/column a PBIR visual binds to, incl. formatting and filters.
+    Returns [{'table','name','kind','role'}] where role is the query role
+    (Values, Category, ...) or 'Formatering' / 'Filter'."""
+    aliases = {}
+
+    def find_aliases(o):
+        if isinstance(o, dict):
+            for f in o.get('From', []) if isinstance(o.get('From'), list) else []:
+                if isinstance(f, dict) and f.get('Name') and f.get('Entity'):
+                    aliases[f['Name']] = f['Entity']
+            for v in o.values():
+                find_aliases(v)
+        elif isinstance(o, list):
+            for v in o:
+                find_aliases(v)
+    find_aliases(vo)
+
+    refs, seen = [], set()
+
+    def add(node, kind, role):
+        expr = node.get('Expression', {})
+        if kind == 'HierarchyLevel':
+            expr = expr.get('Hierarchy', {}).get('Expression', {})
+            name = node.get('Level')
+        else:
+            name = node.get('Property')
+        sref = expr.get('SourceRef', {}) if isinstance(expr, dict) else {}
+        table = sref.get('Entity') or aliases.get(sref.get('Source', ''), '')
+        if not (table and name):
+            return
+        key = (table, name, kind, role)
+        if key not in seen:
+            seen.add(key)
+            refs.append({'table': table, 'name': name,
+                         'kind': 'Measure' if kind == 'Measure' else 'Column', 'role': role})
+
+    def walk(o, role):
+        if isinstance(o, dict):
+            for kind in ('Measure', 'Column', 'HierarchyLevel'):
+                if isinstance(o.get(kind), dict):
+                    add(o[kind], kind, role)
+            for v in o.values():
+                walk(v, role)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v, role)
+
+    inner = vo.get('visual', vo)
+    for role, rdata in inner.get('query', {}).get('queryState', {}).items():
+        walk(rdata, role)
+    rest = {k: v for k, v in inner.items() if k != 'query'}
+    walk(rest, 'Formatering')
+    walk(inner.get('query', {}).get('sortDefinition', {}), 'Sortering')
+    walk(vo.get('filterConfig', {}), 'Filter')
+    return refs
 
 
 def extract_legacy_visual(config, query):
@@ -607,6 +1209,7 @@ def parse_report(pbip_root):
                 'displayName': obj.get('displayName', page_folder.name),
                 'visuals': [],
                 'order': page_order.get(obj.get('name'), 999),
+                'format': 'PBIR',
             }
             visuals_dir = page_folder / 'visuals'
             if visuals_dir.is_dir():

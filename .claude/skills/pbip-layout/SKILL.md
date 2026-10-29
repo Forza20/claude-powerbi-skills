@@ -47,6 +47,8 @@ Arbejd på dansk med brugeren.
    [config.example.json](config.example.json). Felter skrives `Tabel[Felt]`.
    `topN.function`: 2 = distinct count, 0 = sum (OrderBy skal være en kolonne-aggregering,
    ikke et measure). `navLabels` giver korte knaptekster (maks ~8 tegn).
+   Gem også en kopi som `<projektmappe>/docs/layout-config.json` (opret `docs/`), så
+   pbip-catalog kan tagge felterne med deres plads på dashboardet.
 
 7. **Generér og validér.**
    ```
@@ -65,6 +67,10 @@ Arbejd på dansk med brugeren.
 
 9. **Afrapportér** kort: hvad er bygget, hvilke tal der står hvor, nye measures, og
    eventuelle afvigelser fra layoutet.
+
+10. **Tilbyd data catalog.** Spørg om skillen `pbip-catalog` skal køres nu (data catalog i Excel,
+    lineage og dbdiagram.io-model ud fra projektet og `docs/layout-config.json`). Ved ja: følg
+    `.claude/skills/pbip-catalog/SKILL.md`.
 
 ## Faste regler
 - Alle tal som hele tal (ingen K/M) — generatoren sætter `labelDisplayUnits` = 1.
