@@ -35,6 +35,9 @@ Pipeline-steps og deres krævede skills:
 |------|-------------|--------|
 | 1 | `measure-analysis-power-bi` | DAX-audit PDF (orphans, anti-patterns) |
 | 2 | `measure-excel-power-bi` | Measure-inventar XLSX med rewrites + verificeringsqueries |
+| 3 | `pbip-catalog` | Data catalog XLSX, lineage.md (Mermaid) og model.dbml (dbdiagram.io) |
+
+`pbip-catalog` ligger i `.claude/skills/pbip-catalog/` og kræver `pbip-governance/scripts/parse_pbip.py`. Køres den efter `pbip-layout`, bruges `docs/layout-config.json` til dashboard-tagging.
 
 **Vis kun installerede steps i menuen.** Hvis et step mangler, nævn det kort ("Step 2 er ikke installeret i denne session") — stop ikke pipelinen af den grund.
 
@@ -51,6 +54,7 @@ Jeg har fundet følgende tilgængelige steps til [projektnavn]:
 
   [1] Measure Analysis     → DAX-audit, orphans, anti-patterns (PDF)
   [2] Measure Excel        → Measure-inventar med rewrites (XLSX)
+  [3] Data catalog         → Katalog (XLSX), lineage (Mermaid), dbdiagram.io (DBML)
 
 Hvilke steps vil du inkludere?
 ```
@@ -86,6 +90,8 @@ Step 1 ──► analysis.json ──► Step 2 (genbrug — kør IKKE analysen 
 ```
 
 - Gem mellemresultater i `/home/claude/` (`analysis.json`, `rewrites.json`, `verifications.json`)
+- Step 3 skriver `catalog.json` og `missing_descriptions.json`. AI-forslag til beskrivelser (pbip-catalog trin 3) laves i pipelinen; tilbageskrivning til TMDL og dbdocs-udgivelse springes ALTID over i agent-kørsler (de kræver brugerens godkendelse) — nævn det i kørselsloggen.
+- Har brugeren uploadet forrige kørsels `catalog.xlsx`, gives den til step 3 med `--previous`, så rettelser bevares.
 
 ### Fejlstrategi
 
@@ -112,6 +118,7 @@ Steps sprunget over: []
 
 ## Nøgletal
 - Measures i alt: N (USED: x / DEPENDENCY-ONLY: y / ORPHAN: z)
+- Katalog: tabeller / kolonner / measures, beskrivelsesstatus (Mangler / AI-forslag / Fra model / Redigeret / Godkendt)
 - Anti-patterns: <AP-id × antal, ...>
 - Rewrites foreslået: N
 

@@ -1,6 +1,6 @@
 # Claude skills for Power BI
 
-Seven [Claude skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) I built for my own Power BI work: auditing DAX measures, documenting PBIP projects, building a semantic model and designing reports.
+Eight [Claude skills](https://docs.claude.com/en/docs/agents-and-tools/agent-skills/overview) I built for my own Power BI work: auditing DAX measures, documenting PBIP projects, building a semantic model and designing reports.
 
 > **Language:** the skills are written in Danish, and several triggers are Danish phrases. Claude can still answer in English if you ask it to.
 
@@ -8,17 +8,18 @@ Seven [Claude skills](https://docs.claude.com/en/docs/agents-and-tools/agent-ski
 
 | Skill | What it does | When it triggers |
 | --- | --- | --- |
-| [agent](skills/agent/) | Runs the two measure skills below in sequence on a PBIP project and packs the output into one ZIP with a run log and a diff against the previous run | You write `Agent: <project name>` |
+| [agent](skills/agent/) | Runs the two measure skills and pbip-catalog below in sequence on a PBIP project and packs the output into one ZIP with a run log and a diff against the previous run | You write `Agent: <project name>` |
 | [data-modeling](skills/data-modeling/) | Builds a medallion gold layer in Power Query and a finished PBIP (TMDL) from a silver Excel file, with clarifying questions and a step-by-step guide | You write `Data modeling:` |
 | [data-storytelling](skills/data-storytelling/) | Turns analysis into a clear business story: visual choice per KPI, layout and visual hierarchy, drill-through and a QA checklist before a client meeting | Dashboard design or review, choosing visuals, KPI narrative, client presentations |
 | [measure-analysis-power-bi](skills/measure-analysis-power-bi/) | Static analysis of a PBIP project: lists every DAX measure, marks it as used, dependency-only or orphan, flags 15+ DAX anti-patterns and writes a PDF report | Auditing, cleaning up or optimising DAX measures, finding unused measures |
 | [measure-excel-power-bi](skills/measure-excel-power-bi/) | Excel inventory of all DAX measures with usage, dependencies, anti-patterns, suggested rewrites and DAX Studio verification queries | You want the measure inventory as a spreadsheet |
 | [pbip-governance](skills/pbip-governance/) | Parses TMDL and PBIR to produce governance and handover documentation: data lineage, possible PII columns, RLS inventory and an Azure DevOps wiki bundle | Documenting or auditing a PBIP project, lineage, PII or RLS reviews |
+| [pbip-catalog](.claude/skills/pbip-catalog/) | Data catalog in Excel (descriptions, owners, sensitivity with round-trip), column-level lineage from source through Power Query and DAX to dashboard slot (Mermaid), and a DBML model for dbdiagram.io/dbdocs.io. Approved descriptions can be written back to TMDL | You write `Katalog: <project name>`, or say yes after `pbip-layout` |
 | [pbip-layout](.claude/skills/pbip-layout/) | Applies a saved executive dashboard layout (dark KPI tiles, trend with forecast, monthly cards, category bars, top-10 table) to a PBIP project, maps it to the project's own measures and creates missing ones | You write `anvend "layout.md"` |
 
-`measure-analysis-power-bi` and `measure-excel-power-bi` describe helper scripts that are not included here. Claude builds that functionality from the description in each SKILL.md instead. `pbip-governance` and `pbip-layout` include their scripts.
+`measure-analysis-power-bi` and `measure-excel-power-bi` describe helper scripts that are not included here. Claude builds that functionality from the description in each SKILL.md instead. `pbip-governance`, `pbip-layout` and `pbip-catalog` include their scripts. `pbip-catalog` reuses the parser in `skills/pbip-governance/scripts/parse_pbip.py`, so install both if you copy it elsewhere.
 
-`pbip-layout` lives in `.claude/skills/`, so Claude Code loads it automatically in any session that opens this repository (also Claude Code on the web and mobile).
+`pbip-layout` and `pbip-catalog` live in `.claude/skills/`, so Claude Code loads them automatically in any session that opens this repository (also Claude Code on the web and mobile).
 
 ## Install
 

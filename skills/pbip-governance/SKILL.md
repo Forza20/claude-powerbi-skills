@@ -42,7 +42,9 @@ If the user provides a `.pbix` file (binary), explain that PBIX parsing is not s
 
 ### Step 2 — Run the parser
 
-Execute `scripts/parse_pbip.py` with the PBIP folder as argument. It emits a JSON structure to stdout with keys: `model`, `report`, `dataSources`. Capture this as structured data.
+Execute `scripts/parse_pbip.py` with the PBIP folder as argument. It emits a JSON structure to stdout with keys `model` (tables, relationships, roles, expressions, dataSources) and `report` (pages). Capture this as structured data.
+
+The parser is shared with the `pbip-catalog` skill (`.claude/skills/pbip-catalog/`), which also needs these fields: `///` descriptions, Power Query `steps`/`references` per partition and shared query, `column.lineage`/`column.origin`, DAX `dependencies`, relationship cardinality and `visual.fieldRefs`. Keep them backwards compatible when changing the parser.
 
 ```bash
 python3 scripts/parse_pbip.py "/path/to/pbip/project"
@@ -140,7 +142,8 @@ To present it, copy to `/mnt/user-data/outputs/` and use `present_files`. It run
 ## Limitations (be upfront about these)
 
 - **PBIX binary files are not supported** — direct user to save as PBIP first
-- **DAX dependency graph** — measure-to-measure transitive dependencies are not computed in V1
+- **DAX dependency graph** — the parser now emits direct dependencies per measure (`dependencies`); transitive closure and dashboard tagging live in the `pbip-catalog` skill
+- **Column lineage through Power Query** — `column.lineage` / `column.origin` follow renames, joins, added columns and navigation via regex; `Table.Combine` follows the first input only and custom functions are not expanded
 - **VertiPaq stats** — kolumne-kardinalitet og størrelse kræver Analysis Services-adgang, ikke tilgængelig fra filsystem alene
 - **Very complex M expressions** — source detection uses regex, not a full M parser; obscure source functions may show as "Other"
 - **TMDL parser is hand-written** — unusual indentation patterns may truncate multi-line DAX; recommend verifying measures output on first run
