@@ -17,10 +17,29 @@ beskrivelsen ikke forsvinder i stilhed.
 | Beskrivelse | Forretningsbeskrivelse. Skrives tilbage som `///` når Status = Godkendt. |
 | Ejer | Dataejer / ansvarlig. |
 | Følsomhed | Fx Offentlig, Intern, Fortrolig, PII. Forudfyldes "Mulig PII - vurdér" ud fra kolonnenavn. |
-| Opstrøms kilde | Lag før Power BI (bronze/silver-tabel, dbt-model, system). Manuel indtil medallion-lineage automatiseres. |
+| Opstrøms kilde | Hvor data kommer fra før Power BI. Udfyldes automatisk (se nedenfor); egen tekst bevares. |
 | Status | `Mangler` · `AI-forslag` · `Fra model` · `Redigeret` · `Godkendt` |
 
 `Beskrivelseskilde` (Excel / TMDL / AI) viser hvor teksten kom fra i denne kørsel.
+
+### Opstrøms kilde (automatisk)
+| Oprindelse | Eksempel på tekst |
+|---|---|
+| Fil (Excel/CSV) | `Silver_Excel.xlsx › CUST_MASTER › CustomerName` (append af flere ark: `ORDERS_2025 + ORDERS_2026`) |
+| Database uden SQL | `gold.dim_customers.country (PostgreSQL)` |
+| Database med `--sql` | `silver.erp_loc_a101.cntry ← bronze.erp_loc_a101.cntry (afledt: case when …)` |
+| Surrogatnøgle | `Surrogatnøgle genereret i Power Query` / `Surrogatnøgle fra dim_customer (genereret i Power Query)` |
+| Beregnet i Power Query | `Beregnet i Power Query (fact_sales): Number.Round([Quantity] * [UnitPrice], 2)` |
+| Fast liste (`#table`) | `Fast liste i Power Query` / `Opslag i fast liste i Power Query (dim_channel)` |
+| Beregnet kolonne (DAX) | `Beregnet kolonne (DAX) i Power BI` |
+
+Tabeller får kildefil og ark (`Silver_Excel.xlsx › products, subcategories`), SQL-lagene
+(`silver.crm_prd_info, silver.erp_px_cat_g1v2 ← bronze.… (filter: …)`), eller for brotabeller de
+ark rækkerne kommer fra (`… › campaign_skus (nøgler slået op i dim_campaign, dim_product)`).
+
+Kolonnen **Opstrøms kilde (auto)** gemmer den automatiske tekst fra kørslen. Ved næste kørsel
+opdateres Opstrøms kilde kun, hvis den er tom eller stadig er lig med den sidste automatiske
+tekst — har du skrevet noget selv, bevares det.
 
 ### Status-livscyklus
 ```

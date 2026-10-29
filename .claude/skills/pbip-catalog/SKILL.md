@@ -38,8 +38,16 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
 
 2. **Første kørsel.**
    ```
-   python3 "<skill-mappe>/scripts/build_catalog.py" "<projekt>" [--previous "<rettet catalog.xlsx>"]
+   python3 "<skill-mappe>/scripts/build_catalog.py" "<projekt>" [--previous "<rettet catalog.xlsx>"] [--sql <mappe> ...]
    ```
+   **Opstrøms kilde** udfyldes automatisk ud fra Power Query (fil › ark › kolonne,
+   schema.tabel.kolonne, surrogatnøgler, beregnede kolonner, faste lister). Læser modellen fra en
+   database, så led efter SQL der bygger tabellerne i repoet/uploaden (fx `supabase/migrations/`,
+   `sql/`, `models/`, `*.sql` med `CREATE VIEW` eller `INSERT INTO … SELECT`) og giv mapperne med
+   `--sql`. Så følges kolonnen videre gennem lagene, fx
+   `silver.erp_loc_a101.cntry ← bronze.erp_loc_a101.cntry (afledt: case …)`. Nævn hvilke SQL-mapper
+   der blev brugt, eller at ingen blev fundet. Tekst brugeren selv har skrevet i Opstrøms kilde
+   overskrives aldrig.
    Brug `--fence github` hvis lineage.md skal vises på GitHub i stedet for Azure DevOps-wiki.
    Scriptet skriver en JSON-opsummering (antal, beskrivelsesstatus, fjernede felter).
 
@@ -91,4 +99,5 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
 - Udgiv aldrig til dbdocs eller andre tjenester uden udtrykkelig besked.
 - Gentag forbehold: statisk analyse; kolonne-lineage gennem Power Query er regex-baseret
   (komplekse M-udtryk, `Table.Combine` med flere kilder og custom-funktioner følges kun delvist);
-  `Opstrøms kilde` (bronze/silver uden for Power BI) udfyldes manuelt indtil videre.
+  SQL-lineagen (`sql_lineage.py`) er også regex-baseret: CTE'er (`WITH …`), dynamisk SQL, dbt-Jinja
+  og `MERGE`/`UPDATE` følges ikke — så stopper Opstrøms kilde ved det sidste led, der kunne læses.

@@ -6,6 +6,7 @@ Usage:
     python3 build_catalog.py <pbip-folder> [--out DIR] [--layout-config FILE]
                              [--previous catalog.xlsx] [--ai-descriptions FILE]
                              [--fence azdo|github] [--parser parse_pbip.py]
+                             [--sql DIR_OR_FILE ...]
 
 Writes to --out (default <pbip-folder>/docs):
     catalog.xlsx               Excel catalog (edit Beskrivelse/Ejer/Følsomhed/Opstrøms kilde/Status)
@@ -15,6 +16,9 @@ Writes to --out (default <pbip-folder>/docs):
     missing_descriptions.json  Items without a description + context, for AI drafts
 
 Description precedence: earlier Excel edits > TMDL `///` > AI draft (--ai-descriptions).
+Opstrøms kilde is filled automatically from the Power Query origin and, with --sql, followed
+through CREATE VIEW / INSERT INTO ... SELECT in the given SQL files. Text you typed yourself
+is never replaced (the last auto value is kept in "Opstrøms kilde (auto)").
 """
 
 import argparse
@@ -31,6 +35,7 @@ LAYOUT_PAGE_ID = '8d1e4c7a2b5f9e3d6c10'   # fixed page id written by pbip-layout
 EDITABLE = ['Beskrivelse', 'Ejer', 'Følsomhed', 'Opstrøms kilde', 'Status']
 STATUSES = ['Mangler', 'AI-forslag', 'Fra model', 'Redigeret', 'Godkendt']
 PII_DEFAULT = 'Mulig PII - vurdér'
+UPSTREAM_AUTO = 'Opstrøms kilde (auto)'   # last auto value; tells auto text apart from own edits
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +134,137 @@ def lineage_text(events):
         d = short(e.get('detail', ''), 60)
         parts.append(f"{e['query']}: {e['action']}" + (f" ({d})" if d else ''))
     return ' → '.join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Opstrøms kilde (automatic)
+# ---------------------------------------------------------------------------
+
+def _file_label(src):
+    if (src or {}).get('kind') in ('Excel File', 'CSV File', 'Folder'):
+        return re.split(r'[\\/]', str(src.get('details', '')).strip('"'))[-1]
+    return ''
+
+
+def _obj_label(obj):
+    return re.sub(r'\s*\((?:Sheet|Table|DefinedName)\)$', '', obj or '')
+
+
+def _nav_items(expr):
+    """Sheet/table names a navigation step points at: Kilde{[Item="x",Kind="Sheet"]} -> ['x']."""
+    out = []
+    for body in re.findall(r'\{\s*\[(.*?)\]\s*\}', expr or '', re.S):
+        kv = dict(re.findall(r'(\w+)\s*=\s*"((?:[^"]|"")*)"', body))
+        if 'Item' in kv or 'Name' in kv:
+            out.append('.'.join(kv[k] for k in ('Schema', 'Item', 'Name') if k in kv)
+                       if 'Kind' not in kv else kv.get('Item', kv.get('Name')))
+    return out
+
+
+def column_objects(c, steps):
+    """Source objects of a column; an append of several sheets gives all of them."""
+    o, ev = c.get('origin') or {}, c.get('lineage') or []
+    if o.get('kind') != 'source' or not o.get('object'):
+        return []
+    objs = [_obj_label(o['object'])]
+    nav_q = next((e['query'] for e in ev if e['action'] == 'Navigation'), None)
+    for e in ev:
+        if e['action'] == 'Samlet (append)' and e['query'] == nav_q:
+            parts = []
+            for step in [x.strip() for x in e['detail'].split(',')]:
+                parts += _nav_items(steps.get((e['query'], step), ''))
+            if len(parts) > 1:
+                objs = list(dict.fromkeys(parts))
+    return objs
+
+
+def auto_upstream_column(c, table, steps, sql):
+    """Upstream text for a column from its Power Query origin, followed through SQL when given."""
+    if c.get('isCalculated'):
+        return 'Beregnet kolonne (DAX) i Power BI'
+    o, ev = c.get('origin') or {}, c.get('lineage') or []
+    idx = next((e for e in ev if e['action'] == 'Indeks/nøgle'), None)
+    if idx:
+        return ('Surrogatnøgle genereret i Power Query' if idx['query'] == table
+                else f"Surrogatnøgle fra {idx['query']} (genereret i Power Query)")
+    kind = o.get('kind')
+    if kind == 'source':
+        obj, col, src = o.get('object', ''), o.get('column', ''), o.get('source') or {}
+        if sql and obj:
+            chain = sql.column_chain(obj, col)
+            if chain:
+                return chain
+        f = _file_label(src)
+        if f:
+            return f"{f} › {' + '.join(column_objects(c, steps))} › {col}"
+        if obj:
+            k = src.get('kind')
+            return f'{obj}.{col}' + (f' ({k})' if k not in (None, 'Other', 'Unknown') else '')
+        return ''
+    if kind == 'computed':
+        expr = steps.get((o.get('query'), o.get('step')), '')
+        if expr.lstrip().startswith('#table'):
+            q = o.get('query', '')
+            return 'Fast liste i Power Query' if q == table else f'Opslag i fast liste i Power Query ({q})'
+        calc = next((e for e in reversed(ev) if e['action'] == 'Beregnet'), None)
+        if calc:
+            return f"Beregnet i Power Query ({calc['query']}): {short(re.sub(r'^each\\s+', '', calc['detail']), 90)}"
+        return f"Genereret i Power Query ({o.get('query', '')})"
+    if kind == 'join':
+        return f"{o.get('query', '')}[{o.get('column', '')}] via join i Power Query"
+    return ''
+
+
+def auto_upstream_table(t, ttype, steps, sql, model):
+    if ttype == 'Measures':
+        return 'Ingen – measure-tabel i Power BI'
+    cols = [c for c in t['columns'] if not c.get('isCalculated')]
+    origins = [c.get('origin') or {} for c in cols]
+    raw_objs = sorted({o.get('object') for o in origins if o.get('kind') == 'source' and o.get('object')})
+    if sql:
+        chains = [ch for ch in (sql.table_chain(o) for o in raw_objs) if ch]
+        if chains:
+            return '; '.join(dict.fromkeys(chains))
+    objs = list(dict.fromkeys(x for c in cols for x in column_objects(c, steps)))
+    files = sorted({_file_label(o.get('source')) for o in origins if o.get('kind') == 'source'} - {''})
+    if files and objs:
+        return f"{', '.join(files)} › {', '.join(objs)}"
+    if raw_objs:
+        return ', '.join(raw_objs)
+    if not origins or not all(o.get('kind') == 'computed' for o in origins):
+        return ''
+    exprs = [steps.get((o.get('query'), o.get('step')), '') for o in origins]
+    if all(e.lstrip().startswith('#table') for e in exprs):
+        return 'Fast liste i Power Query'
+    part = next(iter(t['partitions']), {})
+    refs = part.get('references', [])
+    queries = {e['name']: e for e in model.get('expressions', []) if e['kind'] == 'query'}
+    tables = {x['name'] for x in model['tables']}
+    only_keys = all(any(e['action'] == 'Indeks/nøgle' for e in (c.get('lineage') or [])) for c in cols)
+    if only_keys:
+        # a bridge/link table: rows come from a shared query, keys are looked up in dimensions
+        items, files = [], set()
+        for r in refs:
+            if r in queries:
+                items += _nav_items(queries[r]['mExpression'])
+                f = _file_label(queries[r].get('resolvedSource'))
+                if f:
+                    files.add(f)
+        if items:
+            dims = [r for r in refs if r in tables]
+            return (f"{', '.join(sorted(files)) + ' › ' if files else ''}{', '.join(dict.fromkeys(items))}"
+                    + (f" (nøgler slået op i {', '.join(dims)})" if dims else ''))
+    return 'Genereret i Power Query' + (f" ud fra {', '.join(refs)}" if refs else '')
+
+
+def apply_upstream(row, key, auto, prev):
+    """Fill Opstrøms kilde with the auto text unless the user wrote something else."""
+    p = prev.get(key) or {}
+    cur = str(p.get('Opstrøms kilde') or '').strip()
+    last_auto = str(p.get(UPSTREAM_AUTO) or '').strip()
+    if not cur or cur == last_auto:
+        row['Opstrøms kilde'] = auto
+    row[UPSTREAM_AUTO] = auto
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +395,7 @@ def merge_editable(key, tmdl_desc, ai, prev, defaults=None):
 # Catalog assembly
 # ---------------------------------------------------------------------------
 
-def build(parsed, slots, prev, ai, pii_reason):
+def build(parsed, slots, prev, ai, pii_reason, sql=None):
     model, report = parsed['model'], parsed['report']
     rels = model['relationships']
     tables = model['tables']
@@ -327,6 +463,15 @@ def build(parsed, slots, prev, ai, pii_reason):
     out = {'tables': [], 'columns': [], 'measures': [], 'relationships': [],
            'sources': [], 'slots': [], 'missing': []}
 
+    steps = {}   # (query, step) -> M expression, for upstream texts
+    for t in tables:
+        for p in t['partitions']:
+            for st in p.get('steps', []):
+                steps[(t['name'], st['name'])] = st['expression']
+    for e in model.get('expressions', []):
+        for st in e.get('steps', []):
+            steps[(e['name'], st['name'])] = st['expression']
+
     for t in tables:
         ttype = classify_table(t, rels)
         part = next(iter(t['partitions']), {})
@@ -344,6 +489,7 @@ def build(parsed, slots, prev, ai, pii_reason):
             'Dashboard (indirekte)': ', '.join(sorted(indirect.get(t['name'], set()))),
         }
         row.update(merge_editable(t['name'], t.get('description'), ai, prev))
+        apply_upstream(row, t['name'], auto_upstream_table(t, ttype, steps, sql, model), prev)
         row['_type'] = 'Tabel'
         out['tables'].append(row)
         if row['Status'] == 'Mangler':
@@ -378,6 +524,7 @@ def build(parsed, slots, prev, ai, pii_reason):
                                       defaults={'Følsomhed': PII_DEFAULT if pii else ''}))
             if not pii and row['Følsomhed'] == PII_DEFAULT:
                 row['Følsomhed'] = ''   # old auto-flag that no longer applies; own text is kept
+            apply_upstream(row, key, auto_upstream_column(c, t['name'], steps, sql), prev)
             row['_type'] = 'Kolonne'
             out['columns'].append(row)
             if row['Status'] == 'Mangler':
@@ -536,13 +683,13 @@ def write_excel(cat, path, project, slots_source):
     tail = EDITABLE + ['Beskrivelseskilde']
     sheet('Tabeller', cat['tables'],
           ['Nøgle', 'Type', 'Skjult', 'Kolonner', 'Measures', 'Kilde', 'Kildeobjekter',
-           'Opstrøms queries', 'Query-gruppe', 'Lagring', 'Dashboard (indirekte)'] + tail,
-          wide=('Beskrivelse',))
+           'Opstrøms queries', 'Query-gruppe', 'Lagring', 'Dashboard (indirekte)'] + tail + [UPSTREAM_AUTO],
+          wide=('Beskrivelse', 'Opstrøms kilde'))
     sheet('Kolonner', cat['columns'],
           ['Nøgle', 'Tabel', 'Kolonne', 'Datatype', 'Format', 'Skjult', 'Nøglefelt', 'Beregnet',
            'Mulig PII', 'Oprindelse', 'Kilde', 'Power Query-trin', 'DAX', 'Dashboard-plads',
-           'Dashboard (indirekte)', 'Bruges i rapport'] + tail,
-          wide=('Beskrivelse', 'Power Query-trin', 'DAX'))
+           'Dashboard (indirekte)', 'Bruges i rapport'] + tail + [UPSTREAM_AUTO],
+          wide=('Beskrivelse', 'Power Query-trin', 'DAX', 'Opstrøms kilde'))
     sheet('Measures', cat['measures'],
           ['Nøgle', 'Tabel', 'Measure', 'Mappe', 'Format', 'Skjult', 'DAX', 'Afhænger af measures',
            'Afhænger af kolonner', 'Alle kildekolonner', 'Bruges af measures', 'Dashboard-plads',
@@ -856,6 +1003,8 @@ def main():
     ap.add_argument('--ai-descriptions')
     ap.add_argument('--fence', choices=['azdo', 'github'], default='azdo')
     ap.add_argument('--parser')
+    ap.add_argument('--sql', nargs='+', default=[],
+                    help='SQL-filer eller -mapper (views, INSERT ... SELECT) til Opstrøms kilde')
     a = ap.parse_args()
 
     pbip = Path(a.pbip).resolve()
@@ -881,7 +1030,12 @@ def main():
 
     pii_reason = getattr(parser, 'pii_reason', None) or \
         (lambda col, table: 'navnemønster' if parser.is_pii(col) else '')
-    cat = build(parsed, slots, prev, ai, pii_reason)
+    sql = None
+    if a.sql:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from sql_lineage import SqlLineage
+        sql = SqlLineage().load(a.sql)
+    cat = build(parsed, slots, prev, ai, pii_reason, sql)
     if xlsx.is_file():
         shutil.copy2(xlsx, out / 'catalog.backup.xlsx')
     write_excel(cat, xlsx, project, slots_source)
@@ -904,6 +1058,13 @@ def main():
         'dashboardFields': len(cat['slots']), 'slotsSource': slots_source,
         'descriptionStatus': counts, 'missingDescriptions': len(cat['missing']),
         'removedSinceLastRun': len(cat['removed']),
+        'upstream': {
+            'filled': sum(1 for r in cat['tables'] + cat['columns'] if r.get('Opstrøms kilde')),
+            'auto': sum(1 for r in cat['tables'] + cat['columns']
+                        if r.get('Opstrøms kilde') and r.get('Opstrøms kilde') == r.get(UPSTREAM_AUTO)),
+            'of': len(cat['tables']) + len(cat['columns']),
+            'sqlTargets': len(sql.tables) if sql else 0,
+        },
     }, indent=2, ensure_ascii=False))
 
 
