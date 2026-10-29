@@ -18,7 +18,7 @@ from pathlib import Path
 
 # Share PII patterns with the parser
 sys.path.insert(0, str(Path(__file__).parent))
-from parse_pbip import PII_PATTERNS, identify_m_source, is_pii  # noqa: E402
+from parse_pbip import identify_m_source, is_pii, pii_reason  # noqa: E402
 
 
 def wiki_filename(name):
@@ -38,7 +38,7 @@ def count_pii(model):
     n = 0
     for t in model['tables']:
         for c in t['columns']:
-            if is_pii(c['name']):
+            if is_pii(c['name'], t['name']):
                 n += 1
     return n
 
@@ -214,8 +214,8 @@ def build_governance_page(model):
     piis = []
     for t in model['tables']:
         for c in t['columns']:
-            if is_pii(c['name']):
-                matched = next((p for p in PII_PATTERNS if p in c['name'].lower()), '')
+            if is_pii(c['name'], t['name']):
+                matched = pii_reason(c['name'], t['name'])
                 piis.append({'table': t['name'], 'col': c['name'],
                              'type': c.get('dataType', ''), 'hidden': c['isHidden'],
                              'matched': matched})
@@ -314,7 +314,7 @@ def build_table_page(t):
                 flags.append(':lock: hidden')
             if c.get('isCalculated'):
                 flags.append(':abacus: calculated')
-            if is_pii(c['name']):
+            if is_pii(c['name'], t['name']):
                 flags.append(':warning: **PII?**')
             md += f"| `{c['name']}` | {c.get('dataType', '-') or '-'} | {' · '.join(flags) or '-'} |\n"
         md += "\n"
