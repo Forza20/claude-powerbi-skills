@@ -143,7 +143,7 @@ To present it, copy to `/mnt/user-data/outputs/` and use `present_files`. It run
 
 - **PBIX binary files are not supported** — direct user to save as PBIP first
 - **DAX dependency graph** — the parser now emits direct dependencies per measure (`dependencies`); transitive closure and dashboard tagging live in the `pbip-catalog` skill
-- **Column lineage through Power Query** — `column.lineage` / `column.origin` follow renames, joins, added columns and navigation via regex; `Table.Combine` follows the first input only and custom functions are not expanded
+- **Column lineage through Power Query** — `column.lineage` / `column.origin` follow renames, joins (also to local steps), added columns, split columns, unpivots and navigation via regex; `Table.Combine` follows the first input only and custom functions are not expanded
 - **VertiPaq stats** — kolumne-kardinalitet og størrelse kræver Analysis Services-adgang, ikke tilgængelig fra filsystem alene
 - **Very complex M expressions** — source detection uses regex, not a full M parser; obscure source functions may show as "Other"
 - **TMDL parser is hand-written** — unusual indentation patterns may truncate multi-line DAX; recommend verifying measures output on first run

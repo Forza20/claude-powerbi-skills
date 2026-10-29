@@ -619,14 +619,29 @@ def trace_m_column(query, column, queries, depth=0):
                 joined = None
                 for sname, sexpr in steps.items():
                     jfn, jargs = _parse_call(sexpr)
+                    # NestedJoin and AddJoinColumn: (table1, key1, table2, key2, newColumnName, ...)
                     if jfn in ('Table.NestedJoin', 'Table.AddJoinColumn') and len(jargs) > 4 \
-                            and _m_str(jargs[4] if jfn == 'Table.NestedJoin' else jargs[3]) == nested:
-                        joined = _m_ident(jargs[2])
+                            and _m_str(jargs[4]) == nested:
+                        joined = _m_ident(_m_first_table_arg(jargs[2]))
                         break
                 ev('Hentet via join', f'{joined or nested}[{src_col}]' + (f' → {col}' if src_col != col else ''))
+                if joined and joined in steps and joined != cur:
+                    # the joined table is a local step: keep tracing inside this query
+                    cur, col = joined, src_col
+                    continue
                 if joined and joined in queries:
                     return finish(joined, src_col)
                 return finish(origin={'kind': 'join', 'query': joined or nested, 'column': src_col})
+        elif fn == 'Table.SplitColumn' and len(args) > 3 and col in _m_str_list(args[3]):
+            src = _m_str(args[1]) or col
+            delim = _m_str_list(args[2])
+            ev('Opdelt', f'{src} → {col}' + (f' (skilletegn "{delim[0]}")' if delim else ''))
+            col = src
+        elif fn == 'Table.UnpivotOtherColumns' and len(args) > 3 and col in (_m_str(args[2]), _m_str(args[3])):
+            keep = ', '.join(_m_str_list(args[1]))
+            what = 'kolonnenavne' if col == _m_str(args[2]) else 'værdier'
+            ev('Unpivot', f'{col} = {what} fra alle kolonner undtagen {keep}')
+            col = f'(alle kolonner undtagen {keep})'
         elif fn == 'Table.TransformColumns' and len(args) > 1 and col in _m_first_strings(args[1]):
             ev('Transformeret', _m_item_for(args[1], col))
         elif fn == 'Table.TransformColumnTypes' and len(args) > 1 and col in _m_first_strings(args[1]):
