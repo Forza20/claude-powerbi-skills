@@ -24,17 +24,60 @@ import sys
 from pathlib import Path
 
 
-PII_PATTERNS = [
-    'email', 'e-mail', 'mail', 'phone', 'telefon', 'mobil', 'tlf',
-    'cpr', 'ssn', 'passport', 'pas', 'cvr', 'vat',
-    'name', 'navn', 'fornavn', 'efternavn', 'firstname', 'lastname', 'fullname',
-    'address', 'adresse', 'postnr', 'zip', 'postal', 'city', 'by',
-    'dob', 'birth', 'fødsel', 'fodsel', 'birthday',
-    'ip', 'ipaddress', 'deviceid', 'userid',
-    'iban', 'account', 'kontonummer', 'kortnummer', 'cardnumber',
-    'salary', 'løn', 'lon', 'income', 'indkomst',
-    'gender', 'køn', 'kon', 'ethnic', 'religion', 'nationality', 'nationalitet',
-]
+# PII heuristic (DA/EN). Column names are split into words (snake_case, camelCase,
+# spaces), so `name` no longer hits product_name and `ip` no longer hits shipping_date.
+# Words that are personal data on their own:
+PII_WORDS = {
+    # contact
+    'email', 'mail', 'phone', 'telephone', 'telefon', 'telefonnummer', 'tlf', 'mobil', 'mobile',
+    # national identifiers
+    'cpr', 'cprnr', 'cprnummer', 'ssn', 'passport', 'pasnummer',
+    # names and persons
+    'firstname', 'lastname', 'fullname', 'middlename', 'surname', 'fornavn', 'efternavn',
+    'mellemnavn', 'username', 'brugernavn', 'contact', 'kontakt', 'kontaktperson',
+    # addresses
+    'address', 'adresse', 'street', 'gade', 'streetname', 'postnr', 'postnummer', 'zip',
+    'zipcode', 'postal', 'postalcode', 'postcode',
+    # birth
+    'dob', 'birth', 'birthdate', 'birthday', 'dateofbirth', 'fødsel', 'fodsel', 'foedsel',
+    'fødselsdato', 'fodselsdato', 'foedselsdato',
+    # online identifiers
+    'ip', 'ipaddress', 'deviceid', 'userid', 'brugerid',
+    # financial
+    'iban', 'accountnumber', 'kontonummer', 'kortnummer', 'cardnumber', 'creditcard',
+    'salary', 'løn', 'loen', 'income', 'indkomst',
+    # special categories (GDPR art. 9) and similar
+    'gender', 'sex', 'køn', 'koen', 'ethnic', 'ethnicity', 'religion', 'nationality', 'nationalitet',
+    'marital', 'maritalstatus', 'civilstand',
+}
+# Words that hold a person's name when used as a column (account_manager, salesperson).
+PII_PERSON_ROLES = {'manager', 'salesperson', 'sælger', 'saelger', 'owner', 'ejer', 'ansvarlig'}
+# `name`/`navn` only counts when the column or table is about a person ...
+PII_NAME_WORDS = {'name', 'navn'}
+PII_PERSON_WORDS = {
+    'first', 'last', 'full', 'middle', 'customer', 'kunde', 'contact', 'kontakt', 'employee',
+    'medarbejder', 'user', 'bruger', 'person', 'manager', 'owner', 'ejer', 'patient', 'member',
+    'medlem', 'borger', 'student', 'elev', 'client', 'klient',
+}
+# ... and never when it names a thing (product_name, month_name, city_name ...).
+PII_NOT_PERSON = {
+    'product', 'produkt', 'campaign', 'kampagne', 'channel', 'kanal', 'region', 'month', 'maaned',
+    'måned', 'day', 'dag', 'week', 'uge', 'city', 'by', 'country', 'land', 'category', 'kategori',
+    'subcategory', 'company', 'firma', 'virksomhed', 'brand', 'store', 'butik', 'table', 'column',
+    'file', 'fil', 'sheet', 'ark', 'segment', 'department', 'afdeling', 'project', 'projekt',
+    'supplier', 'leverandør', 'leverandor', 'vendor', 'shop', 'site', 'event', 'team', 'group',
+    'gruppe', 'role', 'rolle', 'status', 'type',
+}
+# City/town is only personal data inside a table about persons (dim_customer.city).
+PII_PERSON_LOCATION = {'city', 'town', 'by'}
+PII_PERSON_TABLE_WORDS = {
+    'customer', 'customers', 'kunde', 'kunder', 'employee', 'employees', 'medarbejder',
+    'medarbejdere', 'user', 'users', 'bruger', 'brugere', 'person', 'persons', 'personer',
+    'people', 'contact', 'contacts', 'kontakt', 'kontakter', 'patient', 'patients', 'member',
+    'members', 'medlem', 'medlemmer', 'client', 'clients', 'klient', 'klienter',
+}
+# Backwards compatible flat list (used by older callers for display).
+PII_PATTERNS = sorted(PII_WORDS | PII_PERSON_ROLES | PII_NAME_WORDS)
 
 
 def unquote_tmdl(s):
@@ -56,9 +99,41 @@ def split_table_column(s):
     return s, ''
 
 
-def is_pii(col_name):
-    lower = col_name.lower()
-    return any(p in lower for p in PII_PATTERNS)
+def _name_words(name):
+    """'customerEmail' / 'First Name' / 'ip_address' -> ['customer', 'email'] etc."""
+    s = re.sub(r'([a-zæøå0-9])([A-ZÆØÅ])', r'\1 \2', str(name or ''))
+    s = re.sub(r'([A-ZÆØÅ]+)([A-ZÆØÅ][a-zæøå])', r'\1 \2', s)
+    return [w for w in re.split(r'[^0-9a-zæøåA-ZÆØÅ]+', s.lower()) if w]
+
+
+def pii_reason(col_name, table_name=None):
+    """Why a column looks like personal data ('' when it does not). Heuristic only."""
+    words = _name_words(col_name)
+    if not words:
+        return ''
+    # single words and adjacent pairs joined (first_name -> firstname, e_mail -> email)
+    candidates = list(words) + [a + b for a, b in zip(words, words[1:])]
+    candidates += [a + b + c for a, b, c in zip(words, words[1:], words[2:])]
+    for w in candidates:
+        if w in PII_WORDS:
+            return w
+    table_words = set(_name_words(table_name)) if table_name else set()
+    person_table = bool(table_words & PII_PERSON_TABLE_WORDS)
+    ws = set(words)
+    if ws & PII_PERSON_ROLES and not ws & PII_NOT_PERSON:
+        return next(iter(ws & PII_PERSON_ROLES))
+    if ws & PII_NAME_WORDS and not ws & PII_NOT_PERSON:
+        if ws & PII_PERSON_WORDS or (person_table and len(ws - PII_NAME_WORDS) <= 1):
+            return 'navn på person'
+    if person_table and ws & PII_PERSON_LOCATION and len(ws) <= 2:
+        return 'by (persontabel)'
+    return ''
+
+
+def is_pii(col_name, table_name=None):
+    """True when the column name looks like personal data. Pass the table name
+    for context: `name` and `city` only count in tables about persons."""
+    return bool(pii_reason(col_name, table_name))
 
 
 def identify_m_source(m_expr):

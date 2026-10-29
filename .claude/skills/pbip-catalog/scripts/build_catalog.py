@@ -30,6 +30,7 @@ from pathlib import Path
 LAYOUT_PAGE_ID = '8d1e4c7a2b5f9e3d6c10'   # fixed page id written by pbip-layout
 EDITABLE = ['Beskrivelse', 'Ejer', 'Følsomhed', 'Opstrøms kilde', 'Status']
 STATUSES = ['Mangler', 'AI-forslag', 'Fra model', 'Redigeret', 'Godkendt']
+PII_DEFAULT = 'Mulig PII - vurdér'
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +259,7 @@ def merge_editable(key, tmdl_desc, ai, prev, defaults=None):
 # Catalog assembly
 # ---------------------------------------------------------------------------
 
-def build(parsed, slots, prev, ai, is_pii):
+def build(parsed, slots, prev, ai, pii_reason):
     model, report = parsed['model'], parsed['report']
     rels = model['relationships']
     tables = model['tables']
@@ -356,7 +357,7 @@ def build(parsed, slots, prev, ai, is_pii):
             if ttype == 'Measures' and c['isHidden']:
                 continue
             key = fkey(t['name'], c['name'])
-            pii = is_pii(c['name'])
+            pii = pii_reason(c['name'], t['name'])
             origin = c.get('origin') or {}
             row = {
                 'Nøgle': key, 'Tabel': t['name'], 'Kolonne': c['name'],
@@ -364,7 +365,7 @@ def build(parsed, slots, prev, ai, is_pii):
                 'Skjult': 'Ja' if c['isHidden'] else '',
                 'Nøglefelt': 'Ja' if (c.get('isKey') or c['name'] in pk_cols) else '',
                 'Beregnet': 'DAX' if c.get('isCalculated') else '',
-                'Mulig PII': 'Ja' if pii else '',
+                'Mulig PII': f'Ja ({pii})' if pii else '',
                 'Oprindelse': origin_text(origin) if not c.get('isCalculated') else 'Beregnet kolonne (DAX)',
                 'Kilde': source_text(origin.get('source')),
                 'Power Query-trin': lineage_text(c.get('lineage')),
@@ -374,7 +375,9 @@ def build(parsed, slots, prev, ai, is_pii):
                 'Bruges i rapport': '; '.join(sorted(usage.get(key, set()))),
             }
             row.update(merge_editable(key, c.get('description'), ai, prev,
-                                      defaults={'Følsomhed': 'Mulig PII - vurdér' if pii else ''}))
+                                      defaults={'Følsomhed': PII_DEFAULT if pii else ''}))
+            if not pii and row['Følsomhed'] == PII_DEFAULT:
+                row['Følsomhed'] = ''   # old auto-flag that no longer applies; own text is kept
             row['_type'] = 'Kolonne'
             out['columns'].append(row)
             if row['Status'] == 'Mangler':
@@ -876,7 +879,9 @@ def main():
     prev = read_previous(prev_path)
     ai = json.loads(Path(a.ai_descriptions).read_text(encoding='utf-8')) if a.ai_descriptions else {}
 
-    cat = build(parsed, slots, prev, ai, parser.is_pii)
+    pii_reason = getattr(parser, 'pii_reason', None) or \
+        (lambda col, table: 'navnemønster' if parser.is_pii(col) else '')
+    cat = build(parsed, slots, prev, ai, pii_reason)
     if xlsx.is_file():
         shutil.copy2(xlsx, out / 'catalog.backup.xlsx')
     write_excel(cat, xlsx, project, slots_source)
