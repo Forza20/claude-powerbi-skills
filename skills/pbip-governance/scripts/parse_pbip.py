@@ -57,7 +57,8 @@ PII_NAME_WORDS = {'name', 'navn'}
 PII_PERSON_WORDS = {
     'first', 'last', 'full', 'middle', 'customer', 'kunde', 'contact', 'kontakt', 'employee',
     'medarbejder', 'user', 'bruger', 'person', 'manager', 'owner', 'ejer', 'patient', 'member',
-    'medlem', 'borger', 'student', 'elev', 'client', 'klient',
+    'medlem', 'borger', 'student', 'elev', 'client', 'klient', 'guest', 'gæst', 'gaest', 'passenger',
+    'passager', 'traveler', 'traveller', 'rejsende', 'tenant', 'lejer', 'resident', 'beboer',
 }
 # ... and never when it names a thing (product_name, month_name, city_name ...).
 PII_NOT_PERSON = {
@@ -74,7 +75,10 @@ PII_PERSON_TABLE_WORDS = {
     'customer', 'customers', 'kunde', 'kunder', 'employee', 'employees', 'medarbejder',
     'medarbejdere', 'user', 'users', 'bruger', 'brugere', 'person', 'persons', 'personer',
     'people', 'contact', 'contacts', 'kontakt', 'kontakter', 'patient', 'patients', 'member',
-    'members', 'medlem', 'medlemmer', 'client', 'clients', 'klient', 'klienter',
+    'members', 'medlem', 'medlemmer', 'client', 'clients', 'klient', 'klienter', 'guest', 'guests',
+    'gæst', 'gæster', 'gaest', 'gaester', 'passenger', 'passengers', 'passager', 'passagerer',
+    'traveler', 'travelers', 'traveller', 'travellers', 'rejsende', 'tenant', 'tenants', 'lejer', 'lejere',
+    'resident', 'residents', 'beboer', 'beboere',
 }
 # Backwards compatible flat list (used by older callers for display).
 PII_PATTERNS = sorted(PII_WORDS | PII_PERSON_ROLES | PII_NAME_WORDS)
