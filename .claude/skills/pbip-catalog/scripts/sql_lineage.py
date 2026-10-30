@@ -391,6 +391,9 @@ class SqlLineage:
                 | {n for sub in select['sources'].values() if sub['kind'] == 'sub'
                    for n in _sub_tables(sub['select'])},
                 'where': select['where'], 'file': fname,
+                # raw-lines staging (… from raw_lines where file_name = 'fact_orders'): remember the CSV
+                'csv_file': (lambda h: h.group(1) if h else None)(
+                    re.search(r"\bfile_name\s*=\s*'([^']+)'", s[m.end():end], re.I)),
             }
 
     def find_table(self, name):
@@ -410,6 +413,7 @@ class SqlLineage:
         if not t or (t, norm(col)) not in self.columns:
             return ''
         levels, frontier, seen = [], [(t, norm(col))], {(t, norm(col))}
+        csv_cols = []   # 'fact_orders.csv › amount' for bronze columns split out of a raw_lines table
         for _ in range(8):
             nxt, notes = [], []
             for tc in frontier:
@@ -419,6 +423,13 @@ class SqlLineage:
                 if not mp['direct']:
                     notes.append(short(mp['expr'], 80))
                 for r in mp['refs']:
+                    if r[0].split('.')[-1] == 'raw_lines' and r[1] == 'line':
+                        # bronze columns follow the CSV header order (medallion rule), so the bronze
+                        # column name is the CSV column; the file comes from the file_name filter
+                        csv = self.tables.get(tc[0], {}).get('csv_file') or tc[0].split('.')[-1]
+                        name = f'{csv}.csv › {tc[1]}'
+                        if name not in csv_cols:
+                            csv_cols.append(name)
                     if r not in seen:
                         seen.add(r)
                         nxt.append(r)
@@ -433,6 +444,8 @@ class SqlLineage:
                 txt += f" (afledt: {'; '.join(notes)})"
             levels.append(txt)
             frontier = nxt
+        if csv_cols:
+            levels.append(' + '.join(csv_cols))
         return ' ← '.join(levels)
 
     def table_chain(self, table):
