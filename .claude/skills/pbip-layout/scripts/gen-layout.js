@@ -155,7 +155,8 @@ function card({ x, y, w, h, measure, label, valueSize = 40, labelSize = 16, valu
       // cardVisual draws its own inner tile (white by default) over the container background
       fillCustom: [{ properties: { transparency: num(100) }, selector: def }],
       padding: [{ properties: { paddingUniform: num(8) }, selector: def }],
-      layout: [{ properties: { paddingUniform: num(0) }, selector: def }],
+      // "Layout med flere kort → Baggrund": the card's own white tile; off so the dark container shows
+      layout: [{ properties: { paddingUniform: num(0), backgroundShow: bool(false) }, selector: def }],
       spacing: [{ properties: { verticalSpacing: num(2) }, selector: def }],
     },
     visualContainerObjects: vco({ bg, radius: 16, pad }),

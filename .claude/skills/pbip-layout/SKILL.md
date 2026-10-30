@@ -67,12 +67,12 @@ Arbejd på dansk med brugeren.
    (`--status` → open/reload → `--screenshot`). Ved `hasUnsavedChanges: true`: bed brugeren
    gemme (Ctrl+S) — Desktop kan da overskrive rapportfilerne, så kør trin 7 igen bagefter.
    Gennemgå skærmbilledet og ret fejl (tom visual, afklippet tekst, forkerte farver).
-   Tjek især at KPI- og fremhævningsfliserne er mørke (`#333333`). Er de hvide bokse med mørk kant
-   (`cardVisual` tegner sin egen indre flise; `fillCustom.transparency = 100` alene har vist sig ikke at
-   virke i den aktuelle Desktop-version), så notér det under "Åbne punkter" i `layout-mapping.md` – eller,
-   med en bruger til stede: få brugeren til at slå kortets baggrund fra på én flise i Desktop
-   (Formatér → Visual → Kort → Baggrund), gem, sammenlign `visual.json` før/efter, og ret `card()` i
-   `scripts/gen-layout.js` med den egenskab, Desktop skrev.
+   Tjek især at KPI- og fremhævningsfliserne er mørke (`#333333`). `cardVisual` tegner sin egen hvide
+   flise ("Layout med flere kort → Baggrund"); generatoren slår den fra med
+   `objects.layout.backgroundShow = false` (`fillCustom.transparency = 100` alene virker ikke). Er fliserne
+   alligevel hvide bokse med mørk kant, så notér det under "Åbne punkter" i `layout-mapping.md` – eller,
+   med en bruger til stede: få brugeren til at slå baggrunden fra på én flise i Desktop, gem, sammenlign
+   `visual.json` før/efter, og ret `card()` i `scripts/gen-layout.js` med den egenskab, Desktop skrev.
    *I pipeline-tilstand:* bed ikke brugeren om noget – stop og meld tilbage (se nedenfor).
 
 9. **Afrapportér** kort: hvad er bygget, hvilke tal der står hvor, nye measures, og
