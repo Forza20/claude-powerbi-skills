@@ -40,6 +40,18 @@ For nøgletal, hvor lavere er bedre (returer, annulleringer, churn), vendes farv
 <base>_cm_color = IF([<base>_cm] > [<base>_pm], "#D64550", "#252423")
 ```
 
+**Slutter data midt i en måned** (fx sidste dato 7. september): sammenlign seneste *hele* måned med
+måneden før – flyt vinduerne ovenfor én måned tilbage, eller brug modellens "seneste hele måned"-measure.
+Det samme gælder **sparklinen** (`sparkMeasure` i config): ellers ender kurven med et brat fald i den
+ufuldstændige måned. Brug datotabellens `is_complete_month`, hvis den findes, ellers:
+```dax
+<base>_spark =
+VAR MaxSalesDate = CALCULATE(MAX(<Fact>[<OrderDate>]), REMOVEFILTERS(<DateTable>))
+VAR LastFullDay  = IF(MaxSalesDate = EOMONTH(MaxSalesDate, 0), MaxSalesDate, EOMONTH(MaxSalesDate, -1))
+RETURN IF(MAX(<DateTable>[Date]) <= LastFullDay, [<Base>])
+```
+Ét `_spark`-measure pr. månedskort; trend-grafen bruger samme regel.
+
 ## Margin (hvis der findes kostpris)
 ```dax
 total_cost       = SUMX(<Fact>, <Fact>[quantity] * <Fact>[cost])     -- tjek om cost er pr. stk. eller pr. linje

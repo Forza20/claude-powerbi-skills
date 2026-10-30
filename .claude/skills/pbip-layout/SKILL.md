@@ -44,6 +44,8 @@ Arbejd på dansk med brugeren.
 5. **Opret manglende measures** via MCP ud fra [measures.md](measures.md)
    (månedsakse-kolonne, `_cm`/`_pm`/`_label`/`_cm_color` pr. månedskort, margin,
    top-tekster). Format `#,0` / `0.0%`. Test alle med én samlet `EVALUATE ROW(...)`.
+   Slutter data midt i en måned: månedskort, sparklines og trend bruger kun hele måneder
+   (`_spark`-measures i measures.md), så kurverne ikke ender med et kunstigt fald.
 
 6. **Skriv config.json** i scratchpad med samme struktur som
    [config.example.json](config.example.json). Felter skrives `Tabel[Felt]`.
