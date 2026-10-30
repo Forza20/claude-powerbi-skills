@@ -34,6 +34,12 @@ RETURN "Forrige måned: " & FORMAT(pm, "#,0") & " (" & FORMAT(DIVIDE(cm - pm, pm
 <base>_cm_color = IF([<base>_cm] < [<base>_pm], "#D64550", "#252423")
 ```
 
+For nøgletal, hvor lavere er bedre (returer, annulleringer, churn), vendes farven: en stigning er
+`#D64550`, et fald `#252423`:
+```dax
+<base>_cm_color = IF([<base>_cm] > [<base>_pm], "#D64550", "#252423")
+```
+
 ## Margin (hvis der findes kostpris)
 ```dax
 total_cost       = SUMX(<Fact>, <Fact>[quantity] * <Fact>[cost])     -- tjek om cost er pr. stk. eller pr. linje

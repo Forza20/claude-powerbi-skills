@@ -48,7 +48,8 @@ Arbejd på dansk med brugeren.
 6. **Skriv config.json** i scratchpad med samme struktur som
    [config.example.json](config.example.json). Felter skrives `Tabel[Felt]`.
    `topN.function`: 2 = distinct count, 0 = sum (OrderBy skal være en kolonne-aggregering,
-   ikke et measure). `navLabels` giver korte knaptekster (maks ~8 tegn).
+   ikke et measure). TopN beholder uafgjorte, så tabellen kan vise mere end 10 rækker – nævn det
+   i afrapporteringen (eller `layout-mapping.md`), eller tilføj et tiebreaker-measure. `navLabels` giver korte knaptekster (maks ~8 tegn).
    Gem også en kopi som `<projektmappe>/docs/layout-config.json` (opret `docs/`), så
    pbip-catalog kan tagge felterne med deres plads på dashboardet.
 
