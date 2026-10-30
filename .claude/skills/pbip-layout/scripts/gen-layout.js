@@ -152,6 +152,8 @@ function card({ x, y, w, h, measure, label, valueSize = 40, labelSize = 16, valu
         ? { show: bool(true), text: str(label), fontSize: num(labelSize), fontColor: color(C.white), horizontalAlignment: str('center'), position: str('belowValue') }
         : { show: bool(false) }, selector: def }],
       outline: [{ properties: { show: bool(false) }, selector: def }],
+      // cardVisual draws its own inner tile (white by default) over the container background
+      fillCustom: [{ properties: { transparency: num(100) }, selector: def }],
       padding: [{ properties: { paddingUniform: num(8) }, selector: def }],
       layout: [{ properties: { paddingUniform: num(0) }, selector: def }],
       spacing: [{ properties: { verticalSpacing: num(2) }, selector: def }],
@@ -192,7 +194,8 @@ add({
   const m = cfg.monthly[i];
   if (!m) return;
   const y = 772, w = 300, h = 284;
-  const hidden = extra => [{ properties: { show: bool(false), gridlineShow: bool(false), ...extra } }];
+  // show:false alone still renders axis titles ("month_start", clipped value title)
+  const hidden = extra => [{ properties: { show: bool(false), showAxisTitle: bool(false), gridlineShow: bool(false), ...extra } }];
   add({
     visualType: 'areaChart',
     query: { queryState: { Category: { projections: [projC(t.monthColumn)] }, Y: { projections: [projM(m.sparkMeasure)] } } },
