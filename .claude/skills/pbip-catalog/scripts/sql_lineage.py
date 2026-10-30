@@ -9,7 +9,8 @@ gold.dim_customers.country is followed back through the SQL that loads it, e.g.
 Supported (regex based, no full SQL parser):
     CREATE [OR REPLACE] [MATERIALIZED] VIEW t [(cols)] AS SELECT ...
     CREATE TABLE t AS SELECT ...
-    INSERT INTO t [(cols)] SELECT ...      (also inside procedure/function bodies)
+    INSERT INTO t [(cols)] SELECT ...      (also inside procedure/function bodies; without a column
+                                            list the select items map by position to t's CREATE TABLE)
     FROM/JOIN with aliases, subqueries in FROM (incl. SELECT *), CTE-free selects.
 Files are read in name order; a later definition of the same target wins (migrations).
 
@@ -304,25 +305,63 @@ def select_mappings(select, target_cols=None):
     return out
 
 
+CONSTRAINT_WORDS = {'constraint', 'primary', 'foreign', 'unique', 'check', 'exclude', 'like'}
+
+
+def create_table_columns(sql):
+    """CREATE TABLE t (col type, ...) -> {table: [col, ...]} in declaration order."""
+    out = {}
+    pat = re.compile(rf'\bcreate\s+(?:(?:temp|temporary|unlogged)\s+)?table\s+(?:if\s+not\s+exists\s+)?'
+                     rf'({QNAME})\s*\(', re.I)
+    for m in pat.finditer(sql):
+        start = m.end()
+        close = _scan(sql[start:], lambda i, d: d < 0)
+        if close < 0:
+            continue
+        cols = []
+        for part in split_top(sql[start:start + close]):
+            first = re.match(IDENT, part.strip())
+            if first and first.group(0).lower() not in CONSTRAINT_WORDS:
+                cols.append(norm(first.group(0)))
+        if cols:
+            out[norm(m.group(1))] = cols
+    return out
+
+
 class SqlLineage:
     def __init__(self):
-        self.columns = {}   # (table, col) -> mapping
-        self.tables = {}    # table -> {'sources': set(), 'where': str, 'file': str}
+        self.columns = {}     # (table, col) -> mapping
+        self.tables = {}      # table -> {'sources': set(), 'where': str, 'file': str}
+        self.table_cols = {}  # table -> declared columns (for INSERT INTO t SELECT without a column list)
 
     def load(self, paths):
         files = []
         for p in paths:
             p = Path(p)
             files += sorted(p.rglob('*.sql')) if p.is_dir() else [p]
+        texts = []
         for f in sorted(files, key=lambda x: x.name):
             try:
-                self.add_sql(f.read_text(encoding='utf-8', errors='replace'), f.name)
-            except Exception as e:  # never stop the catalog because of one file
+                texts.append((f.name, f.read_text(encoding='utf-8', errors='replace')))
+            except Exception as e:
                 print(f'sql_lineage: sprang {f.name} over ({e})', file=sys.stderr)
+        # pass 1: declared columns of every table, so an INSERT can map its select by position
+        for _, t in texts:
+            try:
+                self.table_cols.update(create_table_columns(strip_comments(t)))
+            except Exception:
+                pass
+        for name, t in texts:
+            try:
+                self.add_sql(t, name)
+            except Exception as e:  # never stop the catalog because of one file
+                print(f'sql_lineage: sprang {name} over ({e})', file=sys.stderr)
         return self
 
     def add_sql(self, sql, fname=''):
         s = strip_comments(sql)
+        for t, c in create_table_columns(s).items():
+            self.table_cols.setdefault(t, c)
         pat = re.compile(
             rf'\b(?:create\s+(?:or\s+replace\s+)?(?:materialized\s+)?view\s+(?:if\s+not\s+exists\s+)?(?P<view>{QNAME})'
             rf'\s*(?:\((?P<vcols>[^)]*)\))?\s+as\s+'
@@ -337,6 +376,11 @@ class SqlLineage:
             select = parse_select(s[m.end():end])
             if not select:
                 continue
+            if cols is None and m.group('ins') and not any(i.get('star') for i in select['items']):
+                # INSERT INTO t SELECT ... without a column list: map by position to t's CREATE TABLE
+                declared = self.table_cols.get(target)
+                if declared and len(declared) == len(select['items']):
+                    cols = declared
             # later definition replaces earlier ones
             for k in [k for k in self.columns if k[0] == target]:
                 del self.columns[k]
@@ -354,7 +398,11 @@ class SqlLineage:
         n = norm(name)
         if n in self.tables:
             return n
-        hits = [t for t in self.tables if t.split('.')[-1] == n.split('.')[-1]]
+        # name-only fallback; when a schema is given it must match (as a suffix: 'gold' ~ 'mp_x_gold'),
+        # otherwise gold.dim_customers could be answered with bronze.dim_customers
+        schema = n.rsplit('.', 1)[0] if '.' in n else ''
+        hits = [t for t in self.tables if t.split('.')[-1] == n.split('.')[-1]
+                and (not schema or ('.' in t and t.rsplit('.', 1)[0].endswith(schema.split('.')[-1])))]
         return hits[0] if len(hits) == 1 else None
 
     def column_chain(self, table, col):
