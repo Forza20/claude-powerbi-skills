@@ -56,7 +56,15 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
    - 1–2 sætninger på dansk forretningssprog: hvad tallet/feltet betyder, enhed, filtre og
      tidslogik (fx "seneste hele måned"). Brug konteksten (DAX, oprindelse, Power Query-trin,
      dashboard-plads) — opfind ikke forretningsregler der ikke står i koden.
-   - Spring tekniske hjælpefelter over hvis du ikke kan sige noget meningsfuldt (lad dem stå som Mangler).
+   - **Nøgler beskrives altid** ud fra relationerne – lad dem ikke stå som Mangler:
+     - surrogatnøgle (`*_key` på 1-siden): "Teknisk nøgle for <dimension> (genereret i gold); bruges kun til
+       relationer – vis den ikke i rapporter."
+     - fremmednøgle (`*_key` på mange-siden): "Kobler <fakta/bro> til <dimension>[<nøgle>]; teknisk felt."
+     - forretningsnøgle (`*_id`, `*_no`): "Kildesystemets id for <emne> (fx GST-0001); bruges til opslag
+       og afstemning mod kilden."
+     - pladsholder i measure-tabellen: "Skjult pladsholder – gør `_Measures` til en tabel; ingen data."
+   - Andre tekniske hjælpefelter springes kun over, hvis der ikke kan siges noget meningsfuldt (lad dem stå
+     som Mangler).
    - Prioritér felter med dashboard-plads, derefter measures, derefter synlige kolonner.
    Kør derefter igen:
    ```
