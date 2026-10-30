@@ -1,6 +1,6 @@
 ---
 name: pbip-layout
-description: Anvender det gemte "Salgsoverblik"-dashboardlayout (mørke KPI-fliser, trend med forecast, månedskort, kategori-søjler, top 10-tabel, fremhævningsfliser) på et Power BI PBIP-projekt og kobler det til projektets egne measures. Trigger ALTID når brugeren skriver `anvend "layout.md"` (også uden anførselstegn, fx "anvend layout.md") sammen med en PBIP-fil/-mappe eller et åbent PBIP-projekt i Power BI Desktop.
+description: Anvender det gemte "Salgsoverblik"-dashboardlayout (mørke KPI-fliser, trend med forecast, månedskort, kategori-søjler, top 10-tabel, fremhævningsfliser) på et Power BI PBIP-projekt og kobler det til projektets egne measures. Trigger ALTID når brugeren skriver `anvend "layout.md"` (også uden anførselstegn, fx "anvend layout.md") sammen med en PBIP-fil/-mappe eller et åbent PBIP-projekt i Power BI Desktop, og når en pipeline-agent (fx `layout-applier`) bliver bedt om at anvende layoutet – se "Pipeline-tilstand".
 ---
 
 # Anvend layout.md på et PBIP-projekt
@@ -29,6 +29,7 @@ Arbejd på dansk med brugeren.
 2. **Forbind til modellen.** Er projektet åbent i Power BI Desktop: brug
    powerbi-modeling-mcp (`ListLocalInstances` → `Connect`). Ellers `ConnectFolder` på
    `<Navn>.SemanticModel/definition`. List tabeller, kolonner, measures og relationer.
+   Forbinder MCP-serveren ikke: læs TMDL-filerne direkte (se "Uden powerbi-modeling-mcp").
 
 3. **Kortlæg pladserne.** Brug tabellen "Pladser der skal kobles til modellen" i
    [layout.md](layout.md). Find for hver plads det bedste eksisterende measure/kolonne;
@@ -38,6 +39,7 @@ Arbejd på dansk med brugeren.
 
 4. **Vis kortlægningen og få godkendelse.** Vis en tabel: plads → measure/kolonne → værdi,
    og hvilke nye measures der oprettes. Spørg med AskUserQuestion. Byg ikke før godkendelse.
+   *I pipeline-tilstand:* spørg ikke – skriv tabellen til fil og fortsæt (se nedenfor).
 
 5. **Opret manglende measures** via MCP ud fra [measures.md](measures.md)
    (månedsakse-kolonne, `_cm`/`_pm`/`_label`/`_cm_color` pr. månedskort, margin,
@@ -64,15 +66,53 @@ Arbejd på dansk med brugeren.
    (`--status` → open/reload → `--screenshot`). Ved `hasUnsavedChanges: true`: bed brugeren
    gemme (Ctrl+S) — Desktop kan da overskrive rapportfilerne, så kør trin 7 igen bagefter.
    Gennemgå skærmbilledet og ret fejl (tom visual, afklippet tekst, forkerte farver).
+   *I pipeline-tilstand:* bed ikke brugeren om noget – stop og meld tilbage (se nedenfor).
 
 9. **Afrapportér** kort: hvad er bygget, hvilke tal der står hvor, nye measures, og
    eventuelle afvigelser fra layoutet.
 
 10. **Tilbyd data catalog.** Spørg om skillen `pbip-catalog` skal køres nu (data catalog i Excel,
-    lineage og dbdiagram.io-model ud fra projektet og `docs/layout-config.json`). Ved ja: følg
-    `.claude/skills/pbip-catalog/SKILL.md`.
+    lineage og dbdiagram.io-model ud fra projektet og `docs/layout-config.json`). Ved ja: indlæs
+    `pbip-catalog` med Skill-værktøjet, eller følg `.claude/skills/pbip-catalog/SKILL.md` i repoet.
+    *I pipeline-tilstand:* spørg ikke – skriv i `layout-mapping.md`, at kataloget kan køres bagefter.
 
 ## Faste regler
 - Alle tal som hele tal (ingen K/M) — generatoren sætter `labelDisplayUnits` = 1.
 - Ret aldrig i eksisterende sider; kun dashboard-siden og `pages.json`.
 - Publicér aldrig til Fabric uden udtrykkelig besked.
+
+## Pipeline-tilstand (kørt af en agent uden bruger)
+
+Gælder når skillen køres af en subagent, fx `layout-applier` i `/messy-pipeline`, eller når opgaven
+siger "pipeline-tilstand". En subagent kan ikke stille spørgsmål til brugeren, så:
+
+- **Trin 4 (godkendelse):** skriv kortlægningstabellen (plads → measure/kolonne → værdi → nye
+  measures → brugt fallback) til `layout-mapping.md` i kørselsmappen, og fortsæt uden at spørge.
+  Vælg altid den plads-kobling, der står først i tabellen i layout.md; brug fallback kun når modellen
+  mangler data, og skriv hvilken.
+- **Trin 8 (Desktop):** tjek først at Desktop er lukket, før filer skrives. Er Desktop åben med
+  ugemte ændringer, eller fejler åbning/skærmbillede (hukommelse, login): forsøg ikke igen, skriv ikke
+  videre, og afslut med status `waiting_for_user` og årsagen. Den kaldende orkestrator spørger brugeren.
+- **Ingen AskUserQuestion** nogen steder. Al tvivl skrives som en "Åbne punkter"-liste i
+  `layout-mapping.md` sammen med det valg, du traf.
+- **Skills:** indlæs `powerbi-authoring:semantic-model-authoring` og
+  `powerbi-authoring:powerbi-report-cli` med Skill-værktøjet. Findes de ikke i sessionen: følg denne
+  fil alene og notér det i `layout-mapping.md`.
+- **Formatering:** reglen "alle tal som hele tal" gælder dashboard-siden, også hvis andre sider i
+  projektet bruger mio. Nævn forskellen i `layout-mapping.md`; ret ikke de andre sider.
+
+### Uden powerbi-modeling-mcp
+
+Når MCP-serveren ikke forbinder (i og uden for pipeline-tilstand):
+
+- **Model:** læs tabeller, kolonner, measures og relationer direkte i
+  `<Navn>.SemanticModel/definition/*.tmdl` og `tables/*.tmdl`.
+- **Værdier (trin 3):** kan DAX ikke køres, så hent kontroltallene fra kilden. For en PBIP bygget med
+  `supabase-medallion-powerbi`: SQL på gold-skemaet via Supabase MCP, eller projektets
+  `expected-values.md`.
+- **Nye measures (trin 5):** skriv dem direkte i `tables/_Measures.tmdl` (eller den eksisterende
+  measure-tabel) med **Desktop lukket**: tab-indrykning, ét nyt GUID pr. `lineageTag`, navne i
+  anførselstegn ved mellemrum, flerlinjet DAX ét niveau dybere end egenskaberne. Kontrollér bagefter,
+  at ingen lineageTag går igen, og at ingen linje er indrykket med mellemrum.
+- **Test:** i stedet for `EVALUATE ROW(...)`: åbn i Desktop (trin 8) og sammenlign kort og tabel med
+  kontroltallene fra kilden.
