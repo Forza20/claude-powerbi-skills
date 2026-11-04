@@ -9,7 +9,7 @@ Layoutet er beskrevet i [layout.md](layout.md). Generatoren
 [scripts/gen-layout.js](scripts/gen-layout.js) bygger siden ud fra en konfigurationsfil;
 [config.example.json](config.example.json) er den oprindelige konfiguration
 (Data Modeling PBIP). DAX-skabeloner til manglende measures ligger i
-[measures.md](measures.md).
+[measures.md](measures.md). Farvenøgler og færdige varianter står i [colors.md](colors.md).
 
 Arbejd på dansk med brugeren.
 
@@ -31,31 +31,51 @@ Arbejd på dansk med brugeren.
    `<Navn>.SemanticModel/definition`. List tabeller, kolonner, measures og relationer.
    Forbinder MCP-serveren ikke: læs TMDL-filerne direkte (se "Uden powerbi-modeling-mcp").
 
-3. **Kortlæg pladserne.** Brug tabellen "Pladser der skal kobles til modellen" i
+3. **Farver (kun med en bruger til stede).** Spørg med AskUserQuestion om brugeren har
+   farvekoder (en `.md`-fil eller hex-koder) eller et screenshot af en hjemmeside/et brand, som
+   farverne skal komme fra. Har brugeren ingen af delene, bruges *Standard* fra colors.md.
+   - Lav højst 2 varianter, der kun ændrer farver. Placeringen er fast (layout.md), så
+     varianterne må ikke love en anden fordeling af KPI'er eller grafer. Brug fx *Standard* og *Brand*,
+     eller *Mørk* og *Brand*.
+   - Sæt farverne med `colors`-nøglerne i colors.md. Udled de manglende toner fra primær- og
+     accentfarven efter reglen under "Brand".
+   - Tjek kontrasten (colors.md → Kontrast). Er en farve for lys som flise-baggrund, brug den som accent.
+   *I pipeline-tilstand:* spring trinnet over og brug *Standard* (ingen `colors`).
+
+4. **Kortlæg pladserne.** Brug tabellen "Pladser der skal kobles til modellen" i
    [layout.md](layout.md). Find for hver plads det bedste eksisterende measure/kolonne;
    brug fallback når data mangler (fx ingen returer → margin % eller aktive kunder).
    Kør DAX-forespørgsler for at kende værdierne (total, kategorier, seneste måned).
    Tjek fx om en "line_total" er før/efter rabat, og om cost er pr. stk.
 
-4. **Vis kortlægningen og få godkendelse.** Vis en tabel: plads → measure/kolonne → værdi,
-   og hvilke nye measures der oprettes. Spørg med AskUserQuestion. Byg ikke før godkendelse.
-   *I pipeline-tilstand:* spørg ikke – skriv tabellen til fil og fortsæt (se nedenfor).
+5. **Vis kortlægningen og eksemplerne, og få godkendelse.** Skriv config.json (trin 7) for hver
+   farvevariant, og lav et HTML-eksempel med generatoren selv. Den skriver ingen rapportfiler i
+   denne tilstand, og placeringen er den samme som i Power BI:
+   ```
+   node "<skill-mappe>/scripts/gen-layout.js" "<.Report-mappe>" "<config.json>" --preview "<scratchpad>/layout-<variant>.html"
+   ```
+   Vis en tabel: plads → measure/kolonne → værdi, og hvilke nye measures der oprettes. Vis også
+   eksemplerne. Kan sessionen udgive sider (Artifact-værktøjet), så udgiv dem som private sider;
+   ellers giv stien til filerne. Spørg med AskUserQuestion om kortlægningen og hvilken variant.
+   Byg ikke før godkendelse. Tallene i eksemplet er pladsholdere – sig det.
+   *I pipeline-tilstand:* spørg ikke og lav ingen eksempler – skriv tabellen til fil og fortsæt (se nedenfor).
 
-5. **Opret manglende measures** via MCP ud fra [measures.md](measures.md)
+6. **Opret manglende measures** via MCP ud fra [measures.md](measures.md)
    (månedsakse-kolonne, `_cm`/`_pm`/`_label`/`_cm_color` pr. månedskort, margin,
    top-tekster). Format `#,0` / `0.0%`. Test alle med én samlet `EVALUATE ROW(...)`.
    Slutter data midt i en måned: månedskort, sparklines og trend bruger kun hele måneder
    (`_spark`-measures i measures.md), så kurverne ikke ender med et kunstigt fald.
 
-6. **Skriv config.json** i scratchpad med samme struktur som
-   [config.example.json](config.example.json). Felter skrives `Tabel[Felt]`.
+7. **Skriv config.json** i scratchpad med samme struktur som
+   [config.example.json](config.example.json). Felter skrives `Tabel[Felt]`. Den valgte
+   farvevariant står i `colors` (nøgler: colors.md); uden `colors` bruges *Standard*.
    `topN.function`: 2 = distinct count, 0 = sum (OrderBy skal være en kolonne-aggregering,
    ikke et measure). TopN beholder uafgjorte, så tabellen kan vise mere end 10 rækker – nævn det
    i afrapporteringen (eller `layout-mapping.md`), eller tilføj et tiebreaker-measure. `navLabels` giver korte knaptekster (maks ~8 tegn).
    Gem også en kopi som `<projektmappe>/docs/layout-config.json` (opret `docs/`), så
    pbip-catalog kan tagge felterne med deres plads på dashboardet.
 
-7. **Generér og validér.**
+8. **Generér og validér.**
    ```
    node "<skill-mappe>/scripts/gen-layout.js" "<.Report-mappe>" "<config.json>"
    powerbi-report-author validate "<.Report-mappe>"
@@ -65,11 +85,12 @@ Arbejd på dansk med brugeren.
    `PBIR_JSON_FILE_NO_SCHEMA` på `.pbip`/`definition.pbir` kommer fra Desktop selv og
    kan ignoreres.
 
-8. **Vis i Desktop og tag skærmbillede** efter powerbi-report-cli's preview-regler
+9. **Vis i Desktop og tag skærmbillede** efter powerbi-report-cli's preview-regler
    (`--status` → open/reload → `--screenshot`). Ved `hasUnsavedChanges: true`: bed brugeren
-   gemme (Ctrl+S) — Desktop kan da overskrive rapportfilerne, så kør trin 7 igen bagefter.
+   gemme (Ctrl+S) — Desktop kan da overskrive rapportfilerne, så kør trin 8 igen bagefter.
    Gennemgå skærmbilledet og ret fejl (tom visual, afklippet tekst, forkerte farver).
-   Tjek især at KPI- og fremhævningsfliserne er mørke (`#333333`). `cardVisual` tegner sin egen hvide
+   Tjek især at KPI- og fremhævningsfliserne har `dark`-farven fra config (standard `#333333`), og at
+   farverne svarer til det godkendte eksempel. `cardVisual` tegner sin egen hvide
    flise ("Layout med flere kort → Baggrund"); generatoren slår den fra med
    `objects.layout.backgroundShow = false` (`fillCustom.transparency = 100` alene virker ikke). Er fliserne
    alligevel hvide bokse med mørk kant, så notér det under "Åbne punkter" i `layout-mapping.md` – eller,
@@ -77,10 +98,10 @@ Arbejd på dansk med brugeren.
    `visual.json` før/efter, og ret `card()` i `scripts/gen-layout.js` med den egenskab, Desktop skrev.
    *I pipeline-tilstand:* bed ikke brugeren om noget – stop og meld tilbage (se nedenfor).
 
-9. **Afrapportér** kort: hvad er bygget, hvilke tal der står hvor, nye measures, og
-   eventuelle afvigelser fra layoutet.
+10. **Afrapportér** kort: hvad er bygget, hvilke tal der står hvor, nye measures, og
+    eventuelle afvigelser fra layoutet og den valgte farvevariant.
 
-10. **Tilbyd data catalog.** Spørg om skillen `pbip-catalog` skal køres nu (data catalog i Excel,
+11. **Tilbyd data catalog.** Spørg om skillen `pbip-catalog` skal køres nu (data catalog i Excel,
     lineage og dbdiagram.io-model ud fra projektet og `docs/layout-config.json`). Ved ja: indlæs
     `pbip-catalog` med Skill-værktøjet, eller følg `.claude/skills/pbip-catalog/SKILL.md` i repoet.
     *I pipeline-tilstand:* spørg ikke – skriv i `layout-mapping.md`, at kataloget kan køres bagefter.
@@ -95,11 +116,12 @@ Arbejd på dansk med brugeren.
 Gælder når skillen køres af en subagent, fx `layout-applier` i `/messy-pipeline`, eller når opgaven
 siger "pipeline-tilstand". En subagent kan ikke stille spørgsmål til brugeren, så:
 
-- **Trin 4 (godkendelse):** skriv kortlægningstabellen (plads → measure/kolonne → værdi → nye
+- **Trin 3 (farver):** spring over; brug *Standard* (ingen `colors` i config). Lav ingen HTML-eksempler.
+- **Trin 5 (godkendelse):** skriv kortlægningstabellen (plads → measure/kolonne → værdi → nye
   measures → brugt fallback) til `layout-mapping.md` i kørselsmappen, og fortsæt uden at spørge.
   Vælg altid den plads-kobling, der står først i tabellen i layout.md; brug fallback kun når modellen
   mangler data, og skriv hvilken.
-- **Trin 8 (Desktop):** tjek først at Desktop er lukket, før filer skrives. Er Desktop åben med
+- **Trin 9 (Desktop):** tjek først at Desktop er lukket, før filer skrives. Er Desktop åben med
   ugemte ændringer, eller fejler åbning/skærmbillede (hukommelse, login): forsøg ikke igen, skriv ikke
   videre, og afslut med status `waiting_for_user` og årsagen. Den kaldende orkestrator spørger brugeren.
 - **Ingen AskUserQuestion** nogen steder. Al tvivl skrives som en "Åbne punkter"-liste i
@@ -116,12 +138,12 @@ Når MCP-serveren ikke forbinder (i og uden for pipeline-tilstand):
 
 - **Model:** læs tabeller, kolonner, measures og relationer direkte i
   `<Navn>.SemanticModel/definition/*.tmdl` og `tables/*.tmdl`.
-- **Værdier (trin 3):** kan DAX ikke køres, så hent kontroltallene fra kilden. For en PBIP bygget med
+- **Værdier (trin 4):** kan DAX ikke køres, så hent kontroltallene fra kilden. For en PBIP bygget med
   `supabase-medallion-powerbi`: SQL på gold-skemaet via Supabase MCP, eller projektets
   `expected-values.md`.
-- **Nye measures (trin 5):** skriv dem direkte i `tables/_Measures.tmdl` (eller den eksisterende
+- **Nye measures (trin 6):** skriv dem direkte i `tables/_Measures.tmdl` (eller den eksisterende
   measure-tabel) med **Desktop lukket**: tab-indrykning, ét nyt GUID pr. `lineageTag`, navne i
   anførselstegn ved mellemrum, flerlinjet DAX ét niveau dybere end egenskaberne. Kontrollér bagefter,
   at ingen lineageTag går igen, og at ingen linje er indrykket med mellemrum.
-- **Test:** i stedet for `EVALUATE ROW(...)`: åbn i Desktop (trin 8) og sammenlign kort og tabel med
+- **Test:** i stedet for `EVALUATE ROW(...)`: åbn i Desktop (trin 9) og sammenlign kort og tabel med
   kontroltallene fra kilden.

@@ -1,12 +1,17 @@
 // Generates the "Salgsoverblik" dashboard page (PBIR) into a PBIP report folder.
-// Usage: node gen-layout.js "<path to .Report folder>" "<path to config.json>"
+// Usage: node gen-layout.js "<path to .Report folder>" "<path to config.json>" [--preview <out.html>]
+// --preview writes an HTML mock-up of the same page (same positions and colours, placeholder
+// numbers) and leaves the report untouched; the report folder may then be "-".
 // Field references in config use DAX notation: "Table[Field]".
 const fs = require('fs');
 const path = require('path');
 
-const [reportDir, configPath] = process.argv.slice(2);
-if (!reportDir || !configPath) throw new Error('Usage: node gen-layout.js <ReportFolder> <config.json>');
-const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+const args = process.argv.slice(2);
+const pi = args.indexOf('--preview');
+const PREVIEW = pi >= 0 ? args.splice(pi, 2)[1] : null;
+const [reportDir, configPath] = args;
+if (!reportDir || !configPath || (pi >= 0 && !PREVIEW)) throw new Error('Usage: node gen-layout.js <ReportFolder> <config.json> [--preview <out.html>]');
+const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^﻿/, ''));
 
 const PAGE_ID = cfg.pageId || '8d1e4c7a2b5f9e3d6c10';
 const pagesDir = path.join(reportDir, 'definition', 'pages');
@@ -30,11 +35,18 @@ function findSchema(fileName, fallback) {
 const SCHEMA_VISUAL = findSchema('visual.json', 'https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.9.0/schema.json');
 const SCHEMA_PAGE = findSchema('page.json', 'https://developer.microsoft.com/json-schemas/fabric/item/report/definition/page/2.1.0/schema.json');
 
+// Every colour on the page. Keys and meaning: colors.md. Older configs only set the first ten;
+// the rest default to the values the page always had.
 const C = Object.assign({
   dark: '#333333', teal: '#1FC8C0', ink: '#252423', sub: '#605E5C',
   border: '#C8C6C4', white: '#FFFFFF', spark: '#E1DFDD', bar: '#C8C6C4',
   gradLow: '#E36C78', gradHigh: '#FDEDEF',
+  navBtn: '#4A4A4A', navHover: '#5C5C5C', grid: '#E1DFDD', trendLine: '#A19F9D',
+  band: '#C8C6C4', negative: '#D64550', axis: '#999999',
 }, cfg.colors || {});
+C.page = C.page || C.white;     // page background
+C.panel = C.panel || C.white;   // background of chart, tile and table boxes
+C.onDark = C.onDark || C.white; // text and icons on the dark rail and KPI tiles
 
 // ---------- helpers ----------
 const lit = v => ({ expr: { Literal: { Value: v } } });
@@ -98,13 +110,13 @@ function navButton({ y, label, icon, link }) {
     visualType: 'actionButton',
     objects: {
       text: label
-        ? [{ properties: { show: bool(true) } }, { properties: { text: str(label), fontSize: num(10), fontColor: color(C.white), horizontalAlignment: str('center') }, selector: def }]
+        ? [{ properties: { show: bool(true) } }, { properties: { text: str(label), fontSize: num(10), fontColor: color(C.onDark), horizontalAlignment: str('center') }, selector: def }]
         : [{ properties: { show: bool(false) } }],
       icon: [{ properties: { show: bool(!!icon) } },
-             { properties: { shapeType: str(icon || 'blank'), placement: str('left'), lineColor: color(C.white), iconSize: num(22) }, selector: def }],
+             { properties: { shapeType: str(icon || 'blank'), placement: str('left'), lineColor: color(C.onDark), iconSize: num(22) }, selector: def }],
       fill: [{ properties: { show: bool(!icon) } },
-             { properties: { fillColor: color('#4A4A4A'), transparency: num(0) }, selector: def },
-             { properties: { fillColor: color('#5C5C5C'), transparency: num(0) }, selector: { id: 'hover' } }],
+             { properties: { fillColor: color(C.navBtn), transparency: num(0) }, selector: def },
+             { properties: { fillColor: color(C.navHover), transparency: num(0) }, selector: { id: 'hover' } }],
       outline: [{ properties: { show: bool(false) } }],
       shape: [{ properties: { tileShape: str('rectangleRounded'), roundEdge: int(6) } }, { properties: { tileShape: str('rectangleRounded') }, selector: def }],
     },
@@ -116,7 +128,8 @@ navButton({ y: 16, icon: 'back', link: { show: bool(true), type: str('Back'), to
 // Nav buttons to the other pages (max 3), bottom-up.
 const otherPages = [];
 const pagesJsonPath = path.join(pagesDir, 'pages.json');
-const pagesJson = JSON.parse(fs.readFileSync(pagesJsonPath, 'utf8'));
+// a preview without a report ("-") just has no buttons to other pages
+const pagesJson = PREVIEW && !fs.existsSync(pagesJsonPath) ? { pageOrder: [] } : JSON.parse(fs.readFileSync(pagesJsonPath, 'utf8'));
 for (const id of pagesJson.pageOrder.filter(p => p !== PAGE_ID)) {
   try {
     const pj = JSON.parse(fs.readFileSync(path.join(pagesDir, id, 'page.json'), 'utf8'));
@@ -149,7 +162,7 @@ function card({ x, y, w, h, measure, label, valueSize = 40, labelSize = 16, valu
     objects: {
       value: [{ properties: value, selector: def }],
       label: [{ properties: label
-        ? { show: bool(true), text: str(label), fontSize: num(labelSize), fontColor: color(C.white), horizontalAlignment: str('center'), position: str('belowValue') }
+        ? { show: bool(true), text: str(label), fontSize: num(labelSize), fontColor: color(C.onDark), horizontalAlignment: str('center'), position: str('belowValue') }
         : { show: bool(false) }, selector: def }],
       outline: [{ properties: { show: bool(false) }, selector: def }],
       // cardVisual draws its own inner tile (white by default) over the container background
@@ -177,16 +190,16 @@ add({
     Y: { projections: [projM(t.measure, t.label || null)] },
   } },
   objects: {
-    categoryAxis: [{ properties: { show: bool(true), axisType: str('Scalar'), showAxisTitle: bool(false), gridlineShow: bool(true), gridlineStyle: str('dotted'), gridlineColor: color('#E1DFDD') } }],
-    valueAxis: [{ properties: { show: bool(true), showAxisTitle: bool(true), labelDisplayUnits: str('1'), gridlineShow: bool(true), gridlineStyle: str('dotted'), gridlineColor: color('#E1DFDD') } }],
+    categoryAxis: [{ properties: { show: bool(true), axisType: str('Scalar'), showAxisTitle: bool(false), gridlineShow: bool(true), gridlineStyle: str('dotted'), gridlineColor: color(C.grid), labelColor: color(C.sub) } }],
+    valueAxis: [{ properties: { show: bool(true), showAxisTitle: bool(true), labelDisplayUnits: str('1'), gridlineShow: bool(true), gridlineStyle: str('dotted'), gridlineColor: color(C.grid), labelColor: color(C.sub), titleColor: color(C.sub) } }],
     dataPoint: [{ properties: { defaultColor: color(C.ink) } }],
     lineStyles: [{ properties: { strokeWidth: num(3), showMarker: bool(false) } }],
     legend: [{ properties: { show: bool(false) } }],
-    trend: [{ properties: { show: bool(true), lineColor: color('#A19F9D'), style: str('dashed'), width: num(2), transparency: num(0), displayName: str('Trend') } }],
-    forecast: [{ properties: { show: bool(true), lineColor: color(C.ink), width: num(1), bandAreaShow: bool(true), bandAreaColor: color('#C8C6C4'), bandAreaTransparency: num(50), displayName: str('Forecast') } }],
+    trend: [{ properties: { show: bool(true), lineColor: color(C.trendLine), style: str('dashed'), width: num(2), transparency: num(0), displayName: str('Trend') } }],
+    forecast: [{ properties: { show: bool(true), lineColor: color(C.ink), width: num(1), bandAreaShow: bool(true), bandAreaColor: color(C.band), bandAreaTransparency: num(50), displayName: str('Forecast') } }],
     zoom: [{ properties: { show: bool(true), showOnCategoryAxis: bool(true), showLabels: bool(false) } }],
   },
-  visualContainerObjects: vco({ bg: C.white, radius: 8, borderColor: C.border, title: t.title, titleSize: 13 }),
+  visualContainerObjects: vco({ bg: C.panel, radius: 8, borderColor: C.border, title: t.title, titleSize: 13 }),
   drillFilterOtherVisuals: true,
 }, [96, 200, 952, 548], 1200);
 
@@ -206,7 +219,7 @@ add({
       dataPoint: [{ properties: { defaultColor: color(C.spark) } }],
       lineStyles: [{ properties: { strokeWidth: num(1), showMarker: bool(false) } }],
     },
-    visualContainerObjects: vco({ bg: C.white, radius: 8, borderColor: C.border, title: m.title, titleSize: 12, pad: 6 }),
+    visualContainerObjects: vco({ bg: C.panel, radius: 8, borderColor: C.border, title: m.title, titleSize: 12, pad: 6 }),
     drillFilterOtherVisuals: true,
   }, [x, y, w, h], 1300 + x);
   card({ x: x + 12, y: y + 64, w: w - 24, h: 92, measure: m.currentMeasure, label: null, bg: null, colorMeasure: m.colorMeasure, pad: 4 });
@@ -231,7 +244,7 @@ add({
     labels: [{ properties: { show: bool(true), fontSize: num(10), color: color(C.sub), labelDisplayUnits: str('1') } }],
     legend: [{ properties: { show: bool(false) } }],
   },
-  visualContainerObjects: vco({ bg: C.white, radius: 8, borderColor: C.border, title: b.title, titleSize: 13 }),
+  visualContainerObjects: vco({ bg: C.panel, radius: 8, borderColor: C.border, title: b.title, titleSize: 13 }),
   filterConfig: { filters: [{
     name: 'f0a1b2c3d4e5f6a7b8c9d0e1',
     field: columnField(b.categoryColumn),
@@ -254,11 +267,11 @@ const tableVisual = {
     sortDefinition: { sort: [{ field: measureField(tb.sortMeasure), direction: 'Descending' }], isDefaultSort: true },
   },
   objects: {
-    columnHeaders: [{ properties: { columnAdjustment: str('growToFit'), autoSizeColumnWidth: bool(true), bold: bool(true), fontSize: num(11), fontColor: color(C.ink), backColor: color(C.white) } }],
-    values: [{ properties: { fontSize: num(11), fontColorPrimary: color(C.ink), fontColorSecondary: color(C.ink), backColorPrimary: color(C.white), backColorSecondary: color(C.white) } }],
+    columnHeaders: [{ properties: { columnAdjustment: str('growToFit'), autoSizeColumnWidth: bool(true), bold: bool(true), fontSize: num(11), fontColor: color(C.ink), backColor: color(C.panel) } }],
+    values: [{ properties: { fontSize: num(11), fontColorPrimary: color(C.ink), fontColorSecondary: color(C.ink), backColorPrimary: color(C.panel), backColorSecondary: color(C.panel) } }],
     total: [{ properties: { totals: bool(false) } }],
   },
-  visualContainerObjects: { ...vco({ bg: C.white, radius: 8, borderColor: C.border }), stylePreset: [{ properties: { name: str('None') } }] },
+  visualContainerObjects: { ...vco({ bg: C.panel, radius: 8, borderColor: C.border }), stylePreset: [{ properties: { name: str('None') } }] },
   drillFilterOtherVisuals: true,
 };
 if (tb.gradientMeasure) {
@@ -275,7 +288,7 @@ if (tb.gradientMeasure) {
 }
 if (tb.dataBarMeasure) {
   tableVisual.objects.columnFormatting = [{
-    properties: { dataBars: { positiveColor: color(C.bar), negativeColor: color('#D64550'), axisColor: color('#999999'), reverseDirection: bool(false), hideText: bool(false) } },
+    properties: { dataBars: { positiveColor: color(C.bar), negativeColor: color(C.negative), axisColor: color(C.axis), reverseDirection: bool(false), hideText: bool(false) } },
     selector: { metadata: qref(tb.dataBarMeasure) },
   }];
 }
@@ -318,13 +331,107 @@ add(tableVisual, [1072, 544, 832, 340], 1700);
   card({ x, y: 944, w: 404, h: 112, measure: h.measure, label: null, valueSize: 28 });
 });
 
+// ---------- preview (HTML mock-up of exactly these visuals; no report files are written) ----------
+function writePreview(out) {
+  const L = o => { const v = o && o.solid && o.solid.color && o.solid.color.expr && o.solid.color.expr.Literal; return v ? v.Value.replace(/^'|'$/g, '') : null; };
+  const P = (arr, i = 0) => (arr && arr[i] && arr[i].properties) || {};
+  const val = p => p && p.expr && p.expr.Literal ? p.expr.Literal.Value.replace(/^'|'$/g, '').replace(/[DL]$/, '') : null;
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+  const hash = s => [...String(s)].reduce((a, ch) => (a * 31 + ch.charCodeAt(0)) >>> 0, 7);
+  const sampleNum = s => (hash(s) % 900000 + 10000).toLocaleString('da-DK');
+  const seriesPts = (seed, n) => Array.from({ length: n }, (_, i) => 0.45 + 0.25 * Math.sin(i / 1.7 + seed % 7) + 0.12 * ((hash(seed + ':' + i) % 100) / 100));
+  const svgLine = (w, h, seed, opts) => {
+    const n = 18, pts = seriesPts(seed, n).map((y, i) => [12 + i * (w - 24) / (n - 1), h - 16 - y * (h - 40)]);
+    let s = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`;
+    if (opts.grid) for (let g = 1; g <= 4; g++) s += `<line x1="12" x2="${w - 12}" y1="${g * h / 5}" y2="${g * h / 5}" stroke="${opts.grid}" stroke-dasharray="2 3"/>`;
+    const d = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+    if (opts.area) s += `<path d="${d} L${pts[n - 1][0]} ${h - 8} L${pts[0][0]} ${h - 8} Z" fill="${opts.area}"/>`;
+    else s += `<path d="${d}" fill="none" stroke="${opts.line}" stroke-width="3"/>`;
+    if (opts.trend) s += `<line x1="${pts[0][0]}" y1="${pts[0][1]}" x2="${pts[n - 1][0]}" y2="${pts[n - 1][1] - 10}" stroke="${opts.trend}" stroke-width="2" stroke-dasharray="7 5"/>`;
+    if (opts.band) { const x = pts[n - 1][0]; s += `<path d="M${x} ${pts[n - 1][1]} L${w - 4} ${pts[n - 1][1] - 40} L${w - 4} ${pts[n - 1][1] + 30} Z" fill="${opts.band}" opacity=".5"/>`; }
+    return s + '</svg>';
+  };
+  let html = '';
+  for (const v of visuals) {
+    const p = v.position, vis = v.visual, o = vis.objects || {}, vc = vis.visualContainerObjects || {};
+    const bgP = P(vc.background), bdP = P(vc.border), tP = P(vc.title);
+    const bg = val(bgP.show) === 'true' ? L(bgP.color) : null, bd = val(bdP.show) === 'true' ? L(bdP.color) : null;
+    let style = `left:${p.x}px;top:${p.y}px;width:${p.width}px;height:${p.height}px;z-index:${p.z};`;
+    if (bg) style += `background:${bg};`; if (bd) style += `border:1px solid ${bd};`; if (bdP.radius) style += `border-radius:${val(bdP.radius)}px;`;
+    let inner = val(tP.show) === 'true' ? `<div class="t" style="color:${L(tP.fontColor) || C.ink};font-size:${val(tP.fontSize) || 12}px">${esc(val(tP.text))}</div>` : '';
+    const proj = role => ((vis.query && vis.query.queryState && vis.query.queryState[role] && vis.query.queryState[role].projections) || []);
+    const w = p.width, h = p.height - (inner ? 30 : 8);
+    switch (vis.visualType) {
+      case 'shape': style += `background:${L(P(o.fill).fillColor)};`; break;
+      case 'actionButton': {
+        const label = val(P(o.text, 1).text), fill = L(P(o.fill, 1).fillColor);
+        inner = `<div class="btn" style="background:${label ? fill : 'transparent'};color:${L(P(o.text, 1).fontColor) || L(P(o.icon, 1).lineColor)}">${label ? esc(label) : '&#8592;'}</div>`; break;
+      }
+      case 'textbox':
+        inner = (P(o.general).paragraphs || []).map(par => `<div style="text-align:${par.horizontalTextAlignment || 'left'}">` + par.textRuns.map(r => `<span style="color:${r.textStyle.color};font-size:${r.textStyle.fontSize};font-weight:${/Bold|Semibold/.test(r.textStyle.fontFamily) ? 600 : 400}">${esc(r.value)}</span>`).join('') + '</div>').join(''); break;
+      case 'cardVisual': {
+        const vp = P(o.value), lp = P(o.label), size = +val(vp.fontSize) || 40, m = (proj('Data')[0] || {}).queryRef || '';
+        const colr = L(vp.fontColor) || (vp.fontColor ? C.teal : C.ink);
+        const txt = size <= 14 ? 'Forrige måned ' + sampleNum(m + 'p') + ' · +4,2 %' : sampleNum(m);
+        inner = `<div class="card"><div style="color:${colr};font-size:${size}px;font-weight:${size >= 20 ? 600 : 400}">${txt}</div>` +
+          (val(lp.show) === 'true' ? `<div style="color:${L(lp.fontColor)};font-size:${val(lp.fontSize)}px">${esc(val(lp.text))}</div>` : '') + '</div>'; break;
+      }
+      case 'lineChart': inner += svgLine(w, h, 'trend', { grid: C.grid, line: L(P(o.dataPoint).defaultColor), trend: C.trendLine, band: C.band }); break;
+      case 'areaChart': inner += svgLine(w, h - 40, (proj('Y')[0] || {}).queryRef || 'a', { area: L(P(o.dataPoint).defaultColor) }); break;
+      case 'clusteredBarChart': {
+        const n = 6, bh = Math.min(30, (h - 12) / n - 8);
+        inner += '<div class="bars">' + Array.from({ length: n }, (_, i) => { const f = 1 - i * 0.13;
+          return `<div class="bar"><span style="color:${C.sub}">Kategori ${i + 1}</span><i style="width:${(f * 70).toFixed(0)}%;height:${bh}px;background:${L(P(o.dataPoint).defaultColor)}"></i><b style="color:${C.sub}">${sampleNum('b' + i)}</b></div>`; }).join('') + '</div>'; break;
+      }
+      case 'tableEx': {
+        const cols = proj('Values').map(c => c.displayName || c.nativeQueryRef), hp = P(o.columnHeaders), rows = 8;
+        const grad = (vis.objects.values || []).some(x => x.properties && x.properties.backColor), bars = !!o.columnFormatting;
+        inner += `<table style="color:${L(P(o.values).fontColorPrimary)}"><tr>${cols.map(c => `<th style="background:${L(hp.backColor)};color:${L(hp.fontColor)}">${esc(c)}</th>`).join('')}</tr>` +
+          Array.from({ length: rows }, (_, r) => '<tr>' + cols.map((c, ci) => {
+            if (!ci) return `<td>Række ${r + 1}</td>`;
+            const t = r / (rows - 1), cell = sampleNum(c + r);
+            if (grad && ci === cols.length - 1) return `<td style="background:color-mix(in srgb, ${C.gradLow} ${Math.round((1 - t) * 100)}%, ${C.gradHigh})">${cell}</td>`;
+            if (bars && ci === 1) return `<td><i class="db" style="width:${Math.round(90 - t * 60)}%;background:${C.bar}"></i>${cell}</td>`;
+            return `<td>${cell}</td>`; }).join('') + '</tr>').join('') + '</table>'; break;
+      }
+      default: break;
+    }
+    html += `<div class="v" style="${style}">${inner}</div>`;
+  }
+  const doc = `<!doctype html><html lang="da"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(cfg.title || 'Salgsoverblik')} – layout-eksempel</title>
+<style>
+  body { margin: 0; background: #1b1b1f; color: #ddd; font-family: "Segoe UI", system-ui, sans-serif; padding: 16px; }
+  .note { font-size: 13px; margin: 0 0 10px; color: #aaa; }
+  .frame { position: relative; width: 100%; max-width: 1600px; aspect-ratio: 16 / 9; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  .page { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; background: ${C.page}; }
+  .v { position: absolute; box-sizing: border-box; overflow: hidden; }
+  .t { text-align: center; padding: 6px 8px 0; height: 24px; }
+  .btn { margin: 0; height: 100%; border-radius: 6px; display: grid; place-items: center; font-size: 13px; }
+  .card { height: 100%; display: grid; place-content: center; text-align: center; gap: 2px; }
+  .bars { padding: 8px 14px; display: grid; gap: 8px; }
+  .bar { display: grid; grid-template-columns: 110px 1fr 70px; align-items: center; gap: 8px; font-size: 12px; }
+  .bar i { display: block; border-radius: 2px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 7px 10px; } td { position: relative; }
+  .db { position: absolute; left: 4px; top: 6px; bottom: 6px; opacity: .55; z-index: 0; border-radius: 2px; }
+</style></head><body>
+<p class="note">Eksempel på dashboard-siden med farverne fra config. Placeringerne er de samme som i Power BI; tallene er pladsholdere.</p>
+<div class="frame" id="f"><div class="page" id="p">${html}</div></div>
+<script>function fit(){var f=document.getElementById('f');document.getElementById('p').style.transform='scale('+(f.clientWidth/1920)+')';}addEventListener('resize',fit);fit();</script>
+</body></html>`;
+  fs.writeFileSync(out, doc, 'utf8');
+  console.log(`Wrote preview with ${visuals.length} visuals to ${out}`);
+}
+if (PREVIEW) { writePreview(PREVIEW); process.exit(0); }
+
 // ---------- write ----------
 const pageDir = path.join(pagesDir, PAGE_ID);
 fs.rmSync(pageDir, { recursive: true, force: true });
 fs.mkdirSync(path.join(pageDir, 'visuals'), { recursive: true });
 fs.writeFileSync(path.join(pageDir, 'page.json'), JSON.stringify({
   $schema: SCHEMA_PAGE, name: PAGE_ID, displayName: cfg.pageName || 'Dashboard', displayOption: 'FitToPage', height: 1080, width: 1920,
-  objects: { background: [{ properties: { color: color(C.white), transparency: num(0) } }] },
+  objects: { background: [{ properties: { color: color(C.page), transparency: num(0) } }] },
 }, null, 2));
 for (const v of visuals) {
   const d = path.join(pageDir, 'visuals', v.name);
