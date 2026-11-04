@@ -8,10 +8,12 @@ gold.dim_customers.country is followed back through the SQL that loads it, e.g.
 
 Supported (regex based, no full SQL parser):
     CREATE [OR REPLACE] [MATERIALIZED] VIEW t [(cols)] AS SELECT ...
-    CREATE TABLE t AS SELECT ...
+    CREATE [TEMP] TABLE t [ON COMMIT ...] AS SELECT ...
     INSERT INTO t [(cols)] SELECT ...      (also inside procedure/function bodies; without a column
                                             list the select items map by position to t's CREATE TABLE)
-    FROM/JOIN with aliases, subqueries in FROM (incl. SELECT *), CTE-free selects.
+    FROM/JOIN with aliases, subqueries in FROM (incl. SELECT *), CTEs (WITH a AS (...) SELECT, also
+    WITH ... INSERT INTO t SELECT and INSERT INTO t WITH ... SELECT). Temp tables are followed like
+    other tables and marked as temp.
 Files are read in name order; a later definition of the same target wins (migrations).
 
 Usage (debug):  python3 sql_lineage.py <sql-dir-or-file> [table.column ...]
@@ -147,9 +149,47 @@ def short(text, n=90):
 # SELECT parsing
 # ---------------------------------------------------------------------------
 
-def parse_select(sql):
+CTE_HEAD = rf'({IDENT})\s*(?:\(([^)]*)\))?\s+as\s+(?:(?:not\s+)?materialized\s+)?\('
+
+
+def split_ctes(s, ctes=None):
+    """'with a as (...), b as (...) select ...' -> ({name: parsed select}, 'select ...')."""
+    ctes = dict(ctes or {})
+    m = re.match(r'^\s*with\s+(?:recursive\s+)?', s, re.I)
+    if not m:
+        return ctes, s
+    i = m.end()
+    while True:
+        h = re.match(r'\s*' + CTE_HEAD, s[i:], re.I)
+        if not h:
+            break
+        start = i + h.end()
+        close = _scan(s[start:], lambda k, d: d < 0)
+        if close < 0:
+            break
+        parsed = parse_select(s[start:start + close], ctes)
+        if parsed:
+            if h.group(2):  # with a (x, y) as (...): rename the select items by position
+                plain = [it for it in parsed['items'] if not it.get('star')]
+                for it, n in zip(plain, [norm(c) for c in h.group(2).split(',')]):
+                    it['name'] = n
+            ctes[norm(h.group(1))] = parsed
+        i = start + close + 1
+        comma = re.match(r'\s*,', s[i:])
+        if not comma:
+            break
+        i += comma.end()
+    return ctes, s[i:]
+
+
+def parse_select(sql, ctes=None):
     """'select ... from ...' -> {'items': [...], 'sources': {alias: src}, 'where': str}"""
     s = sql.strip()
+    if re.match(r'^\(?\s*with\b', s, re.I):
+        if s.startswith('('):
+            s = s[1:s.rfind(')')] if ')' in s else s[1:]
+        ctes, s = split_ctes(s, ctes)
+        s = s.strip()
     m = re.match(r'^\(?\s*select\b', s, re.I)
     if not m:
         return None
@@ -169,12 +209,13 @@ def parse_select(sql):
     if wc:
         nxt = [c for c in rest_clauses if c[0] > wc[0]]
         where = rest[wc[0] + wc[2]:nxt[0][0] if nxt else len(rest)].strip()
-    sources = parse_from(from_clause)
+    sources = parse_from(from_clause, ctes)
     items = [parse_item(it) for it in split_top(select_list)]
-    return {'items': items, 'sources': sources, 'where': where}
+    return {'items': items, 'sources': sources, 'where': where, 'ctes': ctes or {}}
 
 
-def parse_from(fc):
+def parse_from(fc, ctes=None):
+    ctes = ctes or {}
     sources = {}
     parts = re.split(r'\b(?:natural\s+)?(?:(?:left|right|full)\s+(?:outer\s+)?|inner\s+|cross\s+)?join\b',
                      fc, flags=re.I)
@@ -195,7 +236,7 @@ def parse_from(fc):
                     break
             sub, alias = it[1:j], it[j + 1:].strip()
             alias = re.sub(r'^as\s+', '', alias, flags=re.I).split('(')[0].strip()
-            parsed = parse_select(sub)
+            parsed = parse_select(sub, ctes)
             if parsed:
                 sources[norm(alias) or f'_sub{len(sources)}'] = {'kind': 'sub', 'select': parsed}
             continue
@@ -203,6 +244,9 @@ def parse_from(fc):
         if m:
             table = norm(m.group(1))
             alias = norm(m.group(2)) if m.group(2) and m.group(2).lower() not in KEYWORDS else table.split('.')[-1]
+            if '.' not in table and table in ctes:   # a CTE behaves like a subquery
+                sources[alias] = {'kind': 'sub', 'select': ctes[table]}
+                continue
             sources[alias] = {'kind': 'table', 'name': table}
             sources.setdefault(table, {'kind': 'table', 'name': table})
     return sources
@@ -280,10 +324,36 @@ def _resolve(select, qual, col, depth=0):
             sub = s['select']
             item = next((i for i in sub['items'] if not i.get('star') and i['name'] == col), None)
             if item:
-                for q, c in expr_refs(item['expr']):
-                    out += _resolve(sub, q, c, depth + 1)
+                out += _expr_sources(sub, item['expr'], depth + 1)
             elif any(i.get('star') for i in sub['items']):
                 out += _resolve(sub, '', col, depth + 1)
+    return out
+
+
+def _expr_sources(select, expr, depth=0):
+    """Real (table, column) sources of an expression. Scalar subqueries such as
+    (select p.d from t p where ...) are resolved inside their own select, so their aliases and
+    table names do not show up as columns of the outer select."""
+    if depth > 8:
+        return []
+    out, spans = [], []
+    for m in re.finditer(r'\(\s*select\b', expr, re.I):
+        if spans and m.start() < spans[-1][1]:
+            continue
+        close = _scan(expr[m.start() + 1:], lambda k, d: d < 0)
+        if close < 0:
+            continue
+        spans.append((m.start(), m.start() + 1 + close + 1))
+    rest = expr
+    for a, b in reversed(spans):
+        inner = parse_select(expr[a + 1:b - 1], select.get('ctes'))
+        if inner:
+            for it in inner['items']:
+                if not it.get('star'):
+                    out += _expr_sources(inner, it['expr'], depth + 1)
+        rest = rest[:a] + ' ' + rest[b:]
+    for q, c in expr_refs(rest):
+        out += _resolve(select, q, c, depth)
     return out
 
 
@@ -297,10 +367,8 @@ def select_mappings(select, target_cols=None):
         pos += 1
         if not name:
             continue
-        refs = []
-        for q, c in expr_refs(item['expr']):
-            refs += _resolve(select, q, c)
-        out[name] = {'refs': list(dict.fromkeys(refs)), 'expr': item['expr'],
+        refs = _expr_sources(select, item['expr'])
+        out[name] ={'refs': list(dict.fromkeys(refs)), 'expr': item['expr'],
                      'direct': is_direct(item['expr'])}
     return out
 
@@ -365,15 +433,16 @@ class SqlLineage:
         pat = re.compile(
             rf'\b(?:create\s+(?:or\s+replace\s+)?(?:materialized\s+)?view\s+(?:if\s+not\s+exists\s+)?(?P<view>{QNAME})'
             rf'\s*(?:\((?P<vcols>[^)]*)\))?\s+as\s+'
-            rf'|create\s+(?:temp(?:orary)?\s+)?table\s+(?:if\s+not\s+exists\s+)?(?P<ctas>{QNAME})\s+as\s+'
+            rf'|create\s+(?P<temp>temp(?:orary)?\s+)?(?:unlogged\s+)?table\s+(?:if\s+not\s+exists\s+)?(?P<ctas>{QNAME})'
+            r'(?:\s+on\s+commit\s+(?:drop|delete\s+rows|preserve\s+rows))?\s+as\s+'
             rf'|insert\s+into\s+(?P<ins>{QNAME})\s*(?:\((?P<icols>[^)]*)\))?\s*)'
-            r'(?=\(?\s*select\b)', re.I)
+            r'(?=\(?\s*(?:select|with)\b)', re.I)
         for m in pat.finditer(s):
             target = norm(m.group('view') or m.group('ctas') or m.group('ins'))
             cols = m.group('vcols') or m.group('icols')
             cols = [norm(c) for c in cols.split(',')] if cols else None
             end = statement_end(s, m.end())
-            select = parse_select(s[m.end():end])
+            select = parse_select(s[m.end():end], self._leading_ctes(s, m.start()))
             if not select:
                 continue
             if cols is None and m.group('ins') and not any(i.get('star') for i in select['items']):
@@ -390,11 +459,26 @@ class SqlLineage:
                 'sources': {s['name'] for s in select['sources'].values() if s['kind'] == 'table'}
                 | {n for sub in select['sources'].values() if sub['kind'] == 'sub'
                    for n in _sub_tables(sub['select'])},
-                'where': select['where'], 'file': fname,
+                'where': select['where'], 'file': fname, 'temp': bool(m.group('temp')),
                 # raw-lines staging (… from raw_lines where file_name = 'fact_orders'): remember the CSV
                 'csv_file': (lambda h: h.group(1) if h else None)(
                     re.search(r"\bfile_name\s*=\s*'([^']+)'", s[m.end():end], re.I)),
             }
+
+    @staticmethod
+    def _leading_ctes(s, pos):
+        """CTEs written before the statement: 'with a as (...) insert into t select ... from a'."""
+        start = max(s.rfind(';', 0, pos), s.rfind('$$', 0, pos)) + 1
+        seg = s[start:pos]
+        h = re.search(r'\bwith\s+(?:recursive\s+)?' + CTE_HEAD, seg, re.I)
+        if not h:
+            return {}
+        ctes, rest = split_ctes(seg[h.start():])
+        return ctes if not rest.strip() else {}
+
+    @property
+    def temp(self):
+        return {t for t, i in self.tables.items() if i.get('temp')}
 
     def find_table(self, name):
         """Match a Power Query object ('gold.dim_customers' or 'dim_customers')."""

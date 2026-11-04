@@ -83,6 +83,8 @@ class Graph:
         """Node for a database table/view; the column is its schema."""
         n = (sql.find_table(name) if sql else None) or _norm(name)
         schema, _, table = n.rpartition('.')
+        if sql and n in sql.temp:
+            schema = '(temp)'   # temp tables get their own column, placed after their sources
         rank, kind = _schema_layer(schema)
         return self.node('db:' + n, table, kind, rank, 'db:' + schema, n)
 
@@ -233,6 +235,8 @@ def layout_columns(g, files):
             title, unit = 'Power BI-model', 'tabeller'
         elif group == 'pages':
             title, unit = 'Rapport', 'sider'
+        elif group == 'db:(temp)':
+            title, unit = 'temp-tabeller', 'tabeller'
         else:
             title, unit = group[3:] or 'database', 'tabeller'
         if d:

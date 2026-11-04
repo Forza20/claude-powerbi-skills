@@ -23,7 +23,9 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
 | `lineage.html` | **Tilvalg** (`--html`): lineage på tabelniveau som én HTML-side. Kolonnerne er lagene filer → bronze/silver/gold → Power Query → Power BI-tabeller → rapportsider. Tabeller, der ikke bruges videre, har stiplet rød kant, og et klik fremhæver hele vejen. Se [format.md](format.md). |
 
 ## Forudsætninger
-- `python3` med `openpyxl`.
+- Python 3 med `openpyxl`. Kommandoerne nedenfor skriver `python3`. På Windows hedder den ofte
+  `python` eller `py`, og `python3` åbner måske Microsoft Store. Tjek én gang med `python --version`, og
+  brug den kommando, der virker, i hele kørslen.
 - PBIP i TMDL-format (`<Navn>.SemanticModel/definition/`). `model.bim` kan katalogiseres, men
   tilbageskrivning kræver TMDL. Er det en .pbix: bed om Filer → Gem som → *.pbip, og stop.
 - Dashboard-tagging: `docs/layout-config.json` fra pbip-layout. Mangler den, men findes
@@ -52,7 +54,9 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
    Brug `--fence github` hvis lineage.md skal vises på GitHub i stedet for Azure DevOps-wiki.
    Tilføj `--html`, hvis brugeren har bedt om lineage-oversigten som HTML (`docs/lineage.html`).
    Ellers tilbydes den i trin 4.
-   Scriptet skriver en JSON-opsummering (antal, beskrivelsesstatus, fjernede felter).
+   Scriptet skriver en JSON-opsummering: antal, beskrivelsesstatus, fjernede felter, ændringer siden
+   sidste kørsel (`changesSinceLastRun`) og engelske beskrivelser, der skal oversættes (`toTranslate`).
+   Ændringerne står på fanen **Ændringer**, så en ny version kan gennemgås uden at læse hele kataloget.
 
 3. **AI-forslag til manglende beskrivelser.** Læs `docs/missing_descriptions.json` og skriv
    `docs/ai_descriptions.json` som `{ "<Nøgle>": "<beskrivelse>" }`. Regler:
@@ -69,11 +73,17 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
    - Andre tekniske hjælpefelter springes kun over, hvis der ikke kan siges noget meningsfuldt (lad dem stå
      som Mangler).
    - Prioritér felter med dashboard-plads, derefter measures, derefter synlige kolonner.
+   - **Oversættelse:** rækker med `"translate"` har en engelsk `///`-beskrivelse fra modellen
+     (status *Bør oversættes*). Skriv den på dansk med samme indhold. Tilføj ikke noget, og udelad
+     ikke noget. Beslutningsnumre (R2-6), statusværdier (Completed) og feltnavne gengives uændret.
+     Den danske tekst erstatter den engelske i kataloget som *AI-forslag*. Først når brugeren sætter
+     Godkendt og kører trin 5, ændres modellen.
    Kør derefter igen:
    ```
    python3 "<skill-mappe>/scripts/build_catalog.py" "<projekt>" --ai-descriptions "<projekt>/docs/ai_descriptions.json"
    ```
-   Præcedens: rettelser i Excel > TMDL `///` > AI-forslag. Et AI-forslag overskriver aldrig noget.
+   Præcedens: rettelser i Excel > TMDL `///` > AI-forslag. Et AI-forslag overskriver aldrig noget,
+   undtagen en engelsk TMDL-beskrivelse med status *Bør oversættes*.
 
 4. **Afrapportér og spørg om næste skridt** (AskUserQuestion, multi-select):
    - "Jeg retter/godkender beskrivelser i Excel" → bed om den rettede `catalog.xlsx` tilbage og gå til trin 5.
@@ -113,5 +123,9 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
 - Udgiv aldrig til dbdocs eller andre tjenester uden udtrykkelig besked.
 - Gentag forbehold: statisk analyse; kolonne-lineage gennem Power Query er regex-baseret
   (komplekse M-udtryk, `Table.Combine` med flere kilder og custom-funktioner følges kun delvist);
-  SQL-lineagen (`sql_lineage.py`) er også regex-baseret: CTE'er (`WITH …`), dynamisk SQL, dbt-Jinja
-  og `MERGE`/`UPDATE` følges ikke — så stopper Opstrøms kilde ved det sidste led, der kunne læses.
+  SQL-lineagen (`sql_lineage.py`) er også regex-baseret. Den følger CTE'er, temp-tabeller og
+  underforespørgsler i udtryk, men ikke dynamisk SQL, dbt-Jinja og `MERGE`/`UPDATE`. Så stopper
+  Opstrøms kilde ved det sidste led, der kunne læses.
+- Efter ændringer i scripts: kør testene,
+  `python -m unittest discover -s "<skill-mappe>/tests"`. Sæt `PBIP_CATALOG_RUNS` til en mappe med
+  pipeline-kørsler, så testene også tjekker dækningen på rigtige data.

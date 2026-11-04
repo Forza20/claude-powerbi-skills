@@ -34,7 +34,28 @@ from pathlib import Path
 
 LAYOUT_PAGE_ID = '8d1e4c7a2b5f9e3d6c10'   # fixed page id written by pbip-layout
 EDITABLE = ['Beskrivelse', 'Ejer', 'Følsomhed', 'Opstrøms kilde', 'Status']
-STATUSES = ['Mangler', 'AI-forslag', 'Fra model', 'Redigeret', 'Godkendt']
+STATUSES = ['Mangler', 'Bør oversættes', 'AI-forslag', 'Fra model', 'Redigeret', 'Godkendt']
+# function words only; words both languages share ('for', 'i', 'a') are left out
+EN_WORDS = {'the', 'of', 'and', 'with', 'only', 'from', 'is', 'are', 'each', 'which', 'that', 'this',
+            'when', 'to', 'an', 'not', 'or', 'be', 'as', 'on', 'at', 'its', 'than', 'per', 'into', 'all',
+            # common report words with a different Danish form (omsætning, linjer, kunde, antal …)
+            'revenue', 'line', 'lines', 'every', 'paid', 'invoice', 'invoices', 'customer', 'customers',
+            'order', 'orders', 'row', 'rows', 'number', 'count', 'amount', 'value', 'latest', 'month',
+            'months', 'year', 'previous', 'average', 'share', 'used', 'hidden', 'booking', 'bookings',
+            'guest', 'guests', 'account', 'accounts', 'manager', 'managers', 'product', 'products',
+            'sales', 'target', 'targets', 'status', 'valid', 'complete', 'days', 'nights', 'room', 'rooms'}
+DA_WORDS = {'og', 'af', 'er', 'med', 'kun', 'fra', 'som', 'på', 'der', 'den', 'det', 'til', 'ikke', 'hver',
+            'en', 'et', 'eller', 'alle', 'ved', 'efter', 'samt', 'uden', 'inkl', 'pr', 'de', 'om', 'når',
+            'hvor', 'by', 'mod', 'antal', 'kunder', 'ordrer', 'linjer', 'gns', 'seneste', 'forrige', 'uanset'}
+
+
+def looks_english(text):
+    """True for a description that reads as English (the catalog and report are Danish)."""
+    t = re.sub(r'`[^`]*`|\[[^\]]*\]|\b\w+_\w+\b', ' ', str(text or '').lower())
+    words = re.findall(r'[a-zæøå]+', t)
+    en = sum(w in EN_WORDS for w in words)
+    da = sum(w in DA_WORDS or bool(re.search('[æøå]', w)) for w in words)
+    return (en >= 2 and en > 2 * da) or (da == 0 and en >= 1 and len(words) <= 6)
 PII_DEFAULT = 'Mulig PII - vurdér'
 UPSTREAM_AUTO = 'Opstrøms kilde (auto)'   # last auto value; tells auto text apart from own edits
 
@@ -375,11 +396,17 @@ def merge_editable(key, tmdl_desc, ai, prev, defaults=None):
     prev_desc = str(p.get('Beskrivelse') or '').strip()
     prev_status = str(p.get('Status') or '').strip()
     tmdl_desc = (tmdl_desc or '').strip()
-    if prev_desc and prev_status != 'Fra model':
+    if prev_desc and prev_status not in ('Fra model', 'Bør oversættes'):
         out['Beskrivelse'], out['Status'] = prev_desc, prev_status or 'Redigeret'
         if prev_status == 'AI-forslag' and ai.get(key) and ai[key].strip() != prev_desc:
             pass  # keep what is in Excel; a new AI draft never overwrites it
         src = 'Excel'
+    elif tmdl_desc and looks_english(tmdl_desc):
+        # English text from the model: an AI translation may replace it; otherwise flag it
+        if ai.get(key):
+            out['Beskrivelse'], out['Status'], src = ai[key].strip(), 'AI-forslag', 'AI (oversat fra TMDL)'
+        else:
+            out['Beskrivelse'], out['Status'], src = tmdl_desc, 'Bør oversættes', 'TMDL'
     elif tmdl_desc:
         out['Beskrivelse'], out['Status'], src = tmdl_desc, 'Fra model', 'TMDL'
     elif ai.get(key):
@@ -595,8 +622,15 @@ def build(parsed, slots, prev, ai, pii_reason, sql=None):
             'Kildekolonner': r.get('Alle kildekolonner', '') or r.get('Oprindelse', ''),
         })
 
+    # English model descriptions: ask for a Danish translation through the same AI step
+    for r in out['tables'] + out['columns'] + out['measures']:
+        if r['Status'] == 'Bør oversættes':
+            out['missing'].append({'key': r['Nøgle'], 'type': r['_type'], 'translate': r['Beskrivelse'],
+                                   'context': {'table': r.get('Tabel', ''), 'dax': r.get('DAX', ''),
+                                               'origin': r.get('Oprindelse', '')}})
+
     current = {r['Nøgle'] for r in out['tables'] + out['columns'] + out['measures']}
-    out['removed'] = [{'Nøgle': k, 'Ark': v.get('_sheet', ''), 'Beskrivelse': v.get('Beskrivelse') or '',
+    out['removed'] =[{'Nøgle': k, 'Ark': v.get('_sheet', ''), 'Beskrivelse': v.get('Beskrivelse') or '',
                        'Status': v.get('Status') or ''}
                       for k, v in prev.items() if k not in current]
     return out
@@ -640,11 +674,13 @@ def write_excel(cat, path, project, slots_source):
     ] + [(f'  {s}', n) for s, n in sc.items()] + [
         ('', ''),
         ('Fjernet siden sidst', len(cat['removed'])),
+        ('Ændringer siden sidst', len(cat.get('changes', [])) if cat.get('changesSince') else 'første kørsel'),
         ('', ''),
         ('Sådan redigerer du', 'Ret kun de turkise kolonner (Beskrivelse, Ejer, Følsomhed, Opstrøms kilde, Status).'),
         ('', 'Sæt Status = Godkendt når en beskrivelse må skrives tilbage til modellen (///-beskrivelse i TMDL).'),
         ('', 'Næste kørsel læser dine rettelser og fletter dem ind - de overskrives ikke.'),
-        ('Status-værdier', 'Mangler · AI-forslag · Fra model · Redigeret · Godkendt'),
+        ('Status-værdier', ' · '.join(STATUSES)),
+        ('', 'Bør oversættes = beskrivelsen i modellen er på engelsk; et AI-forslag på dansk erstatter den.'),
     ]
     for r in lines:
         ws.append(list(r))
@@ -702,9 +738,40 @@ def write_excel(cat, path, project, slots_source):
     sheet('Relationer', cat['relationships'], ['Fra', 'Til', 'Kardinalitet', 'Krydsfilter', 'Aktiv'])
     sheet('Kilder', cat['sources'], ['Type', 'Navn', 'Detaljer', 'Bruges af', 'Query-gruppe', 'Beskrivelse'],
           wide=('Detaljer', 'Beskrivelse'))
+    if cat.get('changes'):
+        sheet('Ændringer', cat['changes'], ['Ændring', 'Ark', 'Nøgle', 'Felt', 'Før', 'Efter'],
+              wide=('Før', 'Efter'))
     if cat['removed']:
         sheet('Fjernet', cat['removed'], ['Nøgle', 'Ark', 'Beskrivelse', 'Status'], wide=('Beskrivelse',))
     wb.save(path)
+
+
+# fields compared between runs (descriptions included: they are what reviewers check)
+DIFF_FIELDS = {
+    'tables': ('Tabeller', ['Type', 'Kildeobjekter', 'Beskrivelse', 'Status']),
+    'columns': ('Kolonner', ['Datatype', 'Format', 'Skjult', 'Oprindelse', UPSTREAM_AUTO, 'Beskrivelse', 'Status']),
+    'measures': ('Measures', ['DAX', 'Format', 'Mappe', 'Skjult', 'Beskrivelse', 'Status']),
+}
+
+
+def diff_catalog(old, cat):
+    """Rows for the 'Ændringer' sheet: new and changed items since the previous catalog.json.
+    Removed items are listed in 'Fjernet' already."""
+    out = []
+    for part, (sheet_name, fields) in DIFF_FIELDS.items():
+        before = {r['Nøgle']: r for r in old.get(part, [])}
+        for r in cat[part]:
+            o = before.get(r['Nøgle'])
+            if o is None:
+                out.append({'Ændring': 'Ny', 'Ark': sheet_name, 'Nøgle': r['Nøgle'], 'Felt': '', 'Før': '',
+                            'Efter': short(r.get('Beskrivelse', ''), 120)})
+                continue
+            for f in fields:
+                a, b = str(o.get(f) or '').strip(), str(r.get(f) or '').strip()
+                if a != b:
+                    out.append({'Ændring': 'Ændret', 'Ark': sheet_name, 'Nøgle': r['Nøgle'], 'Felt': f,
+                                'Før': a, 'Efter': b})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1039,6 +1106,14 @@ def main():
         from sql_lineage import SqlLineage
         sql = SqlLineage().load(a.sql)
     cat = build(parsed, slots, prev, ai, pii_reason, sql)
+    old_json = out / 'catalog.json'
+    cat['changes'], cat['changesSince'] = [], ''
+    if old_json.is_file():
+        try:
+            old = json.loads(old_json.read_text(encoding='utf-8-sig'))
+            cat['changes'], cat['changesSince'] = diff_catalog(old, cat), old.get('generated', '')
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            print(f'build_catalog: kunne ikke sammenligne med forrige catalog.json ({e})', file=sys.stderr)
     if xlsx.is_file():
         shutil.copy2(xlsx, out / 'catalog.backup.xlsx')
     write_excel(cat, xlsx, project, slots_source)
@@ -1067,6 +1142,8 @@ def main():
         'dashboardFields': len(cat['slots']), 'slotsSource': slots_source,
         'descriptionStatus': counts, 'missingDescriptions': len(cat['missing']),
         'removedSinceLastRun': len(cat['removed']),
+        'changesSinceLastRun': len(cat['changes']) if cat['changesSince'] else None,
+        'toTranslate': sum(1 for r in rows if r['Status'] == 'Bør oversættes'),
         'upstream': {
             'filled': sum(1 for r in cat['tables'] + cat['columns'] if r.get('Opstrøms kilde')),
             'auto': sum(1 for r in cat['tables'] + cat['columns']

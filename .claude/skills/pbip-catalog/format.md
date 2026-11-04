@@ -18,7 +18,7 @@ beskrivelsen ikke forsvinder i stilhed.
 | Ejer | Dataejer / ansvarlig. |
 | Følsomhed | Fx Offentlig, Intern, Fortrolig, PII. Forudfyldes "Mulig PII - vurdér" ud fra kolonnenavn. |
 | Opstrøms kilde | Hvor data kommer fra før Power BI. Udfyldes automatisk (se nedenfor); egen tekst bevares. |
-| Status | `Mangler` · `AI-forslag` · `Fra model` · `Redigeret` · `Godkendt` |
+| Status | `Mangler` · `Bør oversættes` · `AI-forslag` · `Fra model` · `Redigeret` · `Godkendt` |
 
 `Beskrivelseskilde` (Excel / TMDL / AI) viser hvor teksten kom fra i denne kørsel.
 
@@ -46,8 +46,13 @@ tekst — har du skrevet noget selv, bevares det.
 Mangler ──AI-forslag──► AI-forslag ──bruger retter──► Redigeret ──► Godkendt ──writeback──► (TMDL ///)
           TMDL ///  ──► Fra model ───────────────────────────────► Godkendt
 ```
-Præcedens ved hver kørsel: tekst i Excel (status ≠ Fra model) > TMDL `///` > AI-forslag.
+Præcedens ved hver kørsel: tekst i Excel (status ≠ Fra model / Bør oversættes) > TMDL `///` > AI-forslag.
 Rækker med `Fra model` følger altid modellen, så ændringer i TMDL slår igennem.
+
+**Bør oversættes**: TMDL-beskrivelsen er på engelsk. Det afgøres af en ordtælling (`looks_english`)
+af engelske og danske småord og ord med æ/ø/å. Rækken kommer med i `missing_descriptions.json` med
+feltet `translate`. Et AI-forslag på dansk erstatter den engelske tekst (status `AI-forslag`,
+kilde `AI (oversat fra TMDL)`). Først writeback af en godkendt række ændrer modellen.
 
 ## Faner
 - **Oversigt** – antal, beskrivelsesstatus, kilde til dashboard-pladser, vejledning.
@@ -57,6 +62,11 @@ Rækker med `Fra model` følger altid modellen, så ændringer i TMDL slår igen
 - **Dashboard** – én række pr. felt pr. plads på pbip-layout-siden (KPI 1–4, Trend, Månedskort 1–3, Søjler, Top 10-tabel, Fremhævning 1–2).
 - **Relationer** – kardinalitet, krydsfilter, aktiv/inaktiv.
 - **Kilder** – datakilder, parametre og delte Power Query-queries.
+- **Ændringer** – nye og ændrede felter siden forrige `catalog.json` i samme `docs/`-mappe. Kolonner:
+  Ændring (Ny/Ændret), Ark, Nøgle, Felt, Før, Efter. Disse felter sammenlignes: tabeller (Type,
+  Kildeobjekter, Beskrivelse, Status), kolonner (Datatype, Format, Skjult, Oprindelse, Opstrøms
+  kilde (auto), Beskrivelse, Status) og measures (DAX, Format, Mappe, Skjult, Beskrivelse, Status).
+  Fanen findes kun, når der er ændringer.
 - **Fjernet** – felter fra forrige katalog der ikke findes længere.
 
 Kolonnerne `Dashboard-plads` (direkte binding på visual) og `Dashboard (indirekte)` (indgår via
@@ -86,8 +96,9 @@ Skabelonen ligger i `assets/lineage-template.html`, og data indsættes som JSON 
   fjerne fremhævningen. Hold musen over en tabel for at se fuldt navn, type, beskrivelse og antal
   forbindelser.
 - Databaselagene kræver `--sql`. Uden SQL viser siden kun Power Query → model → sider.
-  Temp-tabeller (`create temp table … as`), CTE'er og dynamisk SQL afbryder sporet ligesom i
-  Opstrøms kilde. Så vises tabellen før bruddet som "bruges ikke videre".
+  Temp-tabeller får deres egen kolonne ("temp-tabeller"), og CTE'er følges som underforespørgsler.
+  Dynamisk SQL (`execute format(…)`), `MERGE` og `UPDATE` afbryder sporet ligesom i Opstrøms kilde.
+  Så vises tabellen før bruddet som "bruges ikke videre".
 
 ## model.dbml (dbdiagram.io)
 | Power BI | DBML |

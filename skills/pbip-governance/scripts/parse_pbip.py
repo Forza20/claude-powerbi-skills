@@ -1077,7 +1077,7 @@ def parse_model(pbip_root):
         tables_dir = definition_dir / 'tables'
         if tables_dir.is_dir():
             for tmdl_file in sorted(tables_dir.glob('*.tmdl')):
-                text = tmdl_file.read_text(encoding='utf-8')
+                text = tmdl_file.read_text(encoding='utf-8-sig')
                 t = parse_table_tmdl(text)
                 if t:
                     model['tables'].append(t)
@@ -1086,19 +1086,19 @@ def parse_model(pbip_root):
         expr_file = definition_dir / 'expressions.tmdl'
         if expr_file.is_file():
             model['expressions'] = parse_expressions_tmdl(
-                expr_file.read_text(encoding='utf-8')
+                expr_file.read_text(encoding='utf-8-sig')
             )
 
         # Relationships
         rel_file = definition_dir / 'relationships.tmdl'
         if rel_file.is_file():
             model['relationships'] = parse_relationships_tmdl(
-                rel_file.read_text(encoding='utf-8')
+                rel_file.read_text(encoding='utf-8-sig')
             )
         # Sometimes in model.tmdl
         model_file = definition_dir / 'model.tmdl'
         if model_file.is_file():
-            extra = parse_relationships_tmdl(model_file.read_text(encoding='utf-8'))
+            extra = parse_relationships_tmdl(model_file.read_text(encoding='utf-8-sig'))
             model['relationships'].extend(extra)
 
         # Roles
@@ -1106,17 +1106,17 @@ def parse_model(pbip_root):
         if roles_dir.is_dir():
             for role_file in sorted(roles_dir.glob('*.tmdl')):
                 model['roles'].extend(parse_roles_tmdl(
-                    role_file.read_text(encoding='utf-8')
+                    role_file.read_text(encoding='utf-8-sig')
                 ))
         roles_file = definition_dir / 'roles.tmdl'
         if roles_file.is_file():
             model['roles'].extend(parse_roles_tmdl(
-                roles_file.read_text(encoding='utf-8')
+                roles_file.read_text(encoding='utf-8-sig')
             ))
 
     elif bim_file.is_file():
         # Legacy TMSL
-        obj = json.loads(bim_file.read_text(encoding='utf-8'))
+        obj = json.loads(bim_file.read_text(encoding='utf-8-sig'))
         parse_tmsl(obj, model)
     else:
         raise RuntimeError(f'Neither definition/ nor model.bim found in {sm_dir}')
@@ -1282,7 +1282,7 @@ def parse_report(pbip_root):
         pages_json = pbir_def / 'pages.json'
         if pages_json.is_file():
             try:
-                pf = json.loads(pages_json.read_text(encoding='utf-8'))
+                pf = json.loads(pages_json.read_text(encoding='utf-8-sig'))
                 for idx, name in enumerate(pf.get('pageOrder', [])):
                     page_order[name] = idx
             except (json.JSONDecodeError, KeyError):
@@ -1295,7 +1295,7 @@ def parse_report(pbip_root):
             if not page_file.is_file():
                 continue
             try:
-                obj = json.loads(page_file.read_text(encoding='utf-8'))
+                obj = json.loads(page_file.read_text(encoding='utf-8-sig'))
             except json.JSONDecodeError:
                 continue
             page = {
@@ -1313,7 +1313,7 @@ def parse_report(pbip_root):
                     vjson = vf / 'visual.json'
                     if vjson.is_file():
                         try:
-                            vo = json.loads(vjson.read_text(encoding='utf-8'))
+                            vo = json.loads(vjson.read_text(encoding='utf-8-sig'))
                             page['visuals'].append(extract_pbir_visual(vo))
                         except json.JSONDecodeError:
                             pass
@@ -1324,7 +1324,7 @@ def parse_report(pbip_root):
         report_json = report_dir / 'report.json'
         if report_json.is_file():
             try:
-                obj = json.loads(report_json.read_text(encoding='utf-8'))
+                obj = json.loads(report_json.read_text(encoding='utf-8-sig'))
                 for s in obj.get('sections', []):
                     page = {
                         'name': s.get('name', ''),
