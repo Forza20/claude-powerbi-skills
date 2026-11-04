@@ -48,6 +48,25 @@ Varianterne ændrer kun farver. Placeringen er den samme (layout.md).
 **3. Brand** – standard, men med brugerens farver: `dark` = primærfarve, `teal` = accentfarve,
 `navBtn` = en lysere tone af primærfarven, `bar`/`spark` = en lys tone af accentfarven.
 
+## Fra et screenshot
+
+`scripts/palette.ps1 -Path <billede>` (Windows PowerShell, ingen ekstra moduler) skalerer billedet
+ned, tæller farverne og foreslår nøglerne:
+
+| Nøgle | Hentes fra |
+|---|---|
+| `page` | den største flade i billedet (baggrunden) |
+| `panel` | lys side: hvid; mørk side: den næststørste mørke, neutrale flade |
+| `ink` | den neutrale farve med størst kontrast til `panel`, gjort mørkere/lysere til kontrast ≥ 7 |
+| `teal` (accent) | den mest brugte mættede farve (knapper, links); ingen → Standards turkis |
+| `dark` | en mørk brandfarve (header, footer); ingen → `#333333` (lys side) eller en mørkere `page` |
+| øvrige (`sub`, `border`, `navBtn`, `spark`, `bar` …) | blandet ud fra de fire ovenfor |
+
+Accentfarven skal kunne læses som tal på de mørke fliser (kontrast ≥ 4,5). Er den for mørk, gøres
+den lysere – `accentFromImage` viser originalen, `accentAdjusted` om den er ændret. `contrastOk`
+er `true`, når alle tekstpar består. Et screenshot med store fotos kan give en skæv baggrund; brug
+så et udsnit med sidens header, knapper og tekst.
+
 ## Kontrast
 
 Tjek før du bygger, at tekst kan læses: kontrastforhold mindst 4,5 for `ink` og `sub` på `panel`/`page`,

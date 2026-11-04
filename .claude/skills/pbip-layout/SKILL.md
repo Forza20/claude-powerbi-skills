@@ -42,6 +42,16 @@ Arbejd på dansk med brugeren.
    - Lav højst 2 varianter, der kun ændrer farver. Placeringen er fast (layout.md), så
      varianterne må ikke love en anden fordeling af KPI'er eller grafer. Brug fx *Standard* og *Brand*,
      eller *Mørk* og *Brand*.
+   - **Screenshot i stedet for HEX-koder:** brugeren kan indsætte et screenshot af en hjemmeside,
+     et logo eller en brandside. Mål farverne i billedet i stedet for at gætte:
+     ```
+     powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-mappe>/scripts/palette.ps1" -Path "<billede>"
+     ```
+     Den giver de mest brugte farver med andel og et forslag til alle `colors`-nøgler, som allerede er
+     justeret til læsbar kontrast. Stien til et indsat billede står i beskeden (`[Image: source: …]`).
+     Findes der ingen fil (kun et billede i chatten), så aflæs farverne visuelt, og sig, at de er skønnet.
+     Vis forslaget som farveprøver i HTML-eksemplet (trin 5), og nævn, hvis accentfarven er gjort
+     lysere eller mørkere for at kunne læses (`accentAdjusted`). Detaljer: colors.md → "Fra et screenshot".
    - Sæt farverne med `colors`-nøglerne i colors.md. Udled de manglende toner fra primær- og
      accentfarven efter reglen under "Brand".
    - Tjek kontrasten (colors.md → Kontrast). Er en farve for lys som flise-baggrund, brug den som accent.
