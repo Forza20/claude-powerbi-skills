@@ -20,6 +20,7 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
 | `model.dbml` | Datamodellen til dbdiagram.io / dbdocs.io med beskrivelser, DAX og dashboard-pladser i noter. |
 | `catalog.json` | Maskinlæsbar version (pipeline-handoff og diff mellem kørsler). |
 | `missing_descriptions.json` | Felter uden beskrivelse + kontekst, til AI-forslag. |
+| `lineage.html` | **Tilvalg** (`--html`): lineage på tabelniveau som én HTML-side. Kolonnerne er lagene filer → bronze/silver/gold → Power Query → Power BI-tabeller → rapportsider. Tabeller, der ikke bruges videre, har stiplet rød kant, og et klik fremhæver hele vejen. Se [format.md](format.md). |
 
 ## Forudsætninger
 - `python3` med `openpyxl`.
@@ -49,6 +50,8 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
    der blev brugt, eller at ingen blev fundet. Tekst brugeren selv har skrevet i Opstrøms kilde
    overskrives aldrig.
    Brug `--fence github` hvis lineage.md skal vises på GitHub i stedet for Azure DevOps-wiki.
+   Tilføj `--html`, hvis brugeren har bedt om lineage-oversigten som HTML (`docs/lineage.html`).
+   Ellers tilbydes den i trin 4.
    Scriptet skriver en JSON-opsummering (antal, beskrivelsesstatus, fjernede felter).
 
 3. **AI-forslag til manglende beskrivelser.** Læs `docs/missing_descriptions.json` og skriv
@@ -74,6 +77,9 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
 
 4. **Afrapportér og spørg om næste skridt** (AskUserQuestion, multi-select):
    - "Jeg retter/godkender beskrivelser i Excel" → bed om den rettede `catalog.xlsx` tilbage og gå til trin 5.
+   - "Lineage-oversigt som HTML" → kør `build_catalog.py` igen med de samme argumenter plus `--html`.
+     Fortæl brugeren, at `docs/lineage.html` åbner i en almindelig browser. Kan sessionen udgive
+     sider (Artifact-værktøjet), så tilbyd også at udgive den som privat side.
    - "Publicér på dbdocs.io" → trin 6.
    - "Færdig".
    Vis kort: antal tabeller/kolonner/measures, dashboard-felter, beskrivelsesstatus,

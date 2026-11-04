@@ -70,6 +70,25 @@ measure-afhængigheder) gør det muligt at filtrere på alt der påvirker dashbo
 Mermaid bruger kun `flowchart LR` (understøttet af Azure DevOps-wiki). `--fence azdo` (standard)
 giver `::: mermaid`, `--fence github` giver ```` ```mermaid ````.
 
+## lineage.html (tilvalg, `--html`)
+Én selvstændig HTML-side med lineage på tabelniveau. Den virker offline og kræver ingen server.
+Skabelonen ligger i `assets/lineage-template.html`, og data indsættes som JSON i
+`<script id="lineage-data">`.
+
+- **Kolonner = lag**, fra venstre mod højre: filer (CSV/Excel-ark), databaseskemaer sorteret efter
+  navn (raw/landing → bronze → staging → silver → gold; andre skemaer efter deres kilder), Power
+  Query-queries, Power BI-tabeller og rapportsider. Når tabeller i samme skema bygger på hinanden,
+  deles skemaet i trin (`mp_x_gold · trin 2`).
+- **Grupper**: tabeller i en kolonne grupperes efter den tabel, de føder ("føder dim_customer").
+- **Stiplet rød kant**: tabellen bruges ikke videre af de læste SQL-filer eller Power Query, eller en
+  Power BI-tabel bruges ikke på nogen rapportside. Uden rapportsider markeres modeltabellerne ikke.
+- **Klik** på en tabel fremhæver hele dens vej op- og nedstrøms. Klik igen eller tryk Esc for at
+  fjerne fremhævningen. Hold musen over en tabel for at se fuldt navn, type, beskrivelse og antal
+  forbindelser.
+- Databaselagene kræver `--sql`. Uden SQL viser siden kun Power Query → model → sider.
+  Temp-tabeller (`create temp table … as`), CTE'er og dynamisk SQL afbryder sporet ligesom i
+  Opstrøms kilde. Så vises tabellen før bruddet som "bruges ikke videre".
+
 ## model.dbml (dbdiagram.io)
 | Power BI | DBML |
 |---|---|

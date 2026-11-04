@@ -6,7 +6,7 @@ Usage:
     python3 build_catalog.py <pbip-folder> [--out DIR] [--layout-config FILE]
                              [--previous catalog.xlsx] [--ai-descriptions FILE]
                              [--fence azdo|github] [--parser parse_pbip.py]
-                             [--sql DIR_OR_FILE ...]
+                             [--sql DIR_OR_FILE ...] [--html]
 
 Writes to --out (default <pbip-folder>/docs):
     catalog.xlsx               Excel catalog (edit Beskrivelse/Ejer/Følsomhed/Opstrøms kilde/Status)
@@ -14,6 +14,7 @@ Writes to --out (default <pbip-folder>/docs):
     model.dbml                 DBML for dbdiagram.io / dbdocs.io
     catalog.json               Machine-readable catalog (pipeline handoff / diff)
     missing_descriptions.json  Items without a description + context, for AI drafts
+    lineage.html               (--html) table-level lineage page: files → layers → model → pages
 
 Description precedence: earlier Excel edits > TMDL `///` > AI draft (--ai-descriptions).
 Opstrøms kilde is filled automatically from the Power Query origin and, with --sql, followed
@@ -1005,6 +1006,8 @@ def main():
     ap.add_argument('--parser')
     ap.add_argument('--sql', nargs='+', default=[],
                     help='SQL-filer eller -mapper (views, INSERT ... SELECT) til Opstrøms kilde')
+    ap.add_argument('--html', action='store_true',
+                    help='skriv også lineage.html: lineage-oversigt på tabelniveau (filer → lag → model → sider)')
     a = ap.parse_args()
 
     pbip = Path(a.pbip).resolve()
@@ -1041,7 +1044,13 @@ def main():
     write_excel(cat, xlsx, project, slots_source)
     write_lineage(parsed, cat, slots, out / 'lineage.md', a.fence, project)
     write_dbml(parsed, cat, out / 'model.dbml', project)
-    strip = lambda rows: [{k: v for k, v in r.items() if not k.startswith('_')} for r in rows]  # noqa: E731
+    html_info = None
+    if a.html:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from lineage_html import write_lineage_html
+        html_info = write_lineage_html(parsed, cat, sql, out / 'lineage.html', project,
+                                       (_file_label, _nav_items, column_objects))
+    strip =lambda rows: [{k: v for k, v in r.items() if not k.startswith('_')} for r in rows]  # noqa: E731
     (out / 'catalog.json').write_text(json.dumps({
         'project': project, 'generated': datetime.datetime.now().isoformat(timespec='seconds'),
         'slotsSource': slots_source,
@@ -1065,6 +1074,7 @@ def main():
             'of': len(cat['tables']) + len(cat['columns']),
             'sqlTargets': len(sql.tables) if sql else 0,
         },
+        'lineageHtml': html_info,
     }, indent=2, ensure_ascii=False))
 
 
