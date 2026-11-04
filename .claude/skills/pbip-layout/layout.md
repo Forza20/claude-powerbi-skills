@@ -22,7 +22,7 @@ Alle tal vises som **hele tal** (ingen K/M-enheder).
 | 2 | Tilbage-knap | actionButton | 8, 16, 64, 44 | ikon "back" |
 | 3 | Side-knapper (≤3) | actionButton | 8, nederst, 64, 44 | navigation til øvrige sider |
 | 4 | Titel | textbox | 104, 52, 256, 96 | titel + undertitel |
-| 5–8 | KPI-fliser | cardVisual | y 20, h 148, w 364; x 376 / 764 / 1152 / 1540 | 4 hoved-KPI'er, label under værdi |
+| 5–8 | KPI-fliser | cardVisual | y 20, h 148; 1–4 fliser fordelt jævnt over x 376–1904 med 24 px mellemrum (4 fliser: w 364, x 376 / 764 / 1152 / 1540) | 1–4 hoved-KPI'er, label under værdi |
 | 9 | Trend | lineChart | 96, 200, 952, 548 | hovedmeasure pr. måned, kontinuerlig akse, trendlinje, forecast, zoom-slider |
 | 10–12 | Månedskort | areaChart + 2 × cardVisual | y 772, h 284, w 300; x 96 / 422 / 748 | sparkline, seneste måned (farve efter op/ned), "Forrige måned: X (±Y%)" |
 | 13 | Søjler pr. kategori | clusteredBarChart | 1072, 200, 832, 320 | measure pr. kategori, sorteret faldende, blanke skjult |
@@ -36,6 +36,9 @@ Alle tal vises som **hele tal** (ingen K/M-enheder).
 | KPI 2 | Antal ordrer | antal rækker / transaktioner |
 | KPI 3 | Indtjening / profit | omsætning efter rabat, gns. ordreværdi |
 | KPI 4 | Rate i % (margin, returrate) | margin %, andel aktive kunder |
+
+KPI 1–4 er forslaget. Med en bruger til stede vælger brugeren selv 1–4 KPI'er og deres tekst
+(SKILL.md trin 4); fliserne fordeles så jævnt over rækken.
 | Trend | Omsætning pr. måned | — |
 | Månedskort 1–3 | Omsætning, ordrer, tredje nøgletal (returer/kunder) | aktive kunder |
 | Søjler | Ordrer pr. produktkategori | omsætning pr. kategori / segment |

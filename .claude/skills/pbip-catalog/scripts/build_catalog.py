@@ -335,12 +335,15 @@ def slots_from_page(page):
 
     def bucket(x, starts):
         return min(range(len(starts)), key=lambda i: abs(starts[i] - x)) + 1
+    # 1–4 KPI tiles spread over the row: number them left to right, not by fixed positions
+    kpi_x = sorted({v.get('position', {}).get('x', 0) for v in page['visuals']
+                    if v.get('type') == 'cardVisual' and abs(v.get('position', {}).get('y', 0) - 20) < 10})
     for v in page['visuals']:
         p = v.get('position', {})
         x, y, typ = p.get('x', 0), p.get('y', 0), v.get('type')
         slot = None
         if typ == 'cardVisual' and abs(y - 20) < 10:
-            slot = f'KPI {bucket(x, [376, 764, 1152, 1540])}'
+            slot = f'KPI {kpi_x.index(x) + 1}'
         elif typ == 'lineChart':
             slot = 'Trend'
         elif y >= 760 and x < 1060 and typ in ('areaChart', 'cardVisual'):

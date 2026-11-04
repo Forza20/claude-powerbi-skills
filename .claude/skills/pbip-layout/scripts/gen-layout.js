@@ -176,10 +176,12 @@ function card({ x, y, w, h, measure, label, valueSize = 40, labelSize = 16, valu
     drillFilterOtherVisuals: true,
   }, [x, y, w, h], 1100 + x + y);
 }
-[376, 764, 1152, 1540].forEach((x, i) => {
-  const k = cfg.kpis[i];
-  if (k) card({ x, y: 20, w: 364, h: 148, measure: k.measure, label: k.label });
-});
+// 1–4 tiles spread evenly over the row x 376–1904 with 24 px gaps (4 tiles = the original 364 px each)
+const kpis = (cfg.kpis || []).filter(k => k && k.measure);
+if (!kpis.length) throw new Error('config.kpis: at least one KPI with a measure is required');
+if (kpis.length > 4) console.warn(`config.kpis has ${kpis.length} entries; only the first 4 fit on the page`);
+const kn = Math.min(4, kpis.length), kw = Math.floor((1528 - (kn - 1) * 24) / kn);
+kpis.slice(0, kn).forEach((k, i) => card({ x: 376 + i * (kw + 24), y: 20, w: kw, h: 148, measure: k.measure, label: k.label }));
 
 // ---------- 4. trend line ----------
 const t = cfg.trend;

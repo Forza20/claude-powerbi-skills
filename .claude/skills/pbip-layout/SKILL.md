@@ -47,6 +47,17 @@ Arbejd på dansk med brugeren.
    brug fallback når data mangler (fx ingen returer → margin % eller aktive kunder).
    Kør DAX-forespørgsler for at kende værdierne (total, kategorier, seneste måned).
    Tjek fx om en "line_total" er før/efter rabat, og om cost er pr. stk.
+   **KPI-fliserne vælger brugeren selv** (kun med en bruger til stede):
+   - Vis forslaget til KPI 1–4 fra tabellen, og en liste over modellens øvrige measures, der giver ét
+     tal: navn, værdi og visningsmappe. Udelad hjælpe-measures (`_cm`, `_pm`, `_label`, `_color`, `_spark`).
+   - Spørg med AskUserQuestion (multiSelect), hvilke 1–4 KPI'er der skal vises, og om teksten under
+     tallet skal være measure-navnet eller en egen tekst (maks ~20 tegn). Rækkefølgen er den, brugeren
+     vælger i.
+   - Vælger brugeren et tal, modellen ikke har (fx "gns. ordreværdi"), så foreslå DAX ud fra
+     measures.md og opret det i trin 6. Gæt ikke på forretningsregler: spørg, hvis definitionen er uklar.
+   - Fliserne fordeles jævnt over rækken: 1–4 fliser, aldrig huller. `kpis` i config.json har én
+     post pr. valgt KPI i den valgte rækkefølge.
+   *I pipeline-tilstand:* brug forslaget KPI 1–4 fra tabellen uden at spørge.
 
 5. **Vis kortlægningen og eksemplerne, og få godkendelse.** Skriv config.json (trin 7) for hver
    farvevariant, og lav et HTML-eksempel med generatoren selv. Den skriver ingen rapportfiler i
@@ -54,7 +65,7 @@ Arbejd på dansk med brugeren.
    ```
    node "<skill-mappe>/scripts/gen-layout.js" "<.Report-mappe>" "<config.json>" --preview "<scratchpad>/layout-<variant>.html"
    ```
-   Vis en tabel: plads → measure/kolonne → værdi, og hvilke nye measures der oprettes. Vis også
+   Vis en tabel: plads → measure/kolonne → værdi (med de valgte KPI'er), og hvilke nye measures der oprettes. Vis også
    eksemplerne. Kan sessionen udgive sider (Artifact-værktøjet), så udgiv dem som private sider;
    ellers giv stien til filerne. Spørg med AskUserQuestion om kortlægningen og hvilken variant.
    Byg ikke før godkendelse. Tallene i eksemplet er pladsholdere – sig det.
