@@ -23,8 +23,13 @@ standardværdien, så en ældre config uden `colors` giver præcis samme side so
 | `negative` / `axis` | negative databjælker / databjælkens akse | `#D64550` / `#999999` |
 | `white` | ældre nøgle: standard for `page`, `panel` og `onDark` | `#FFFFFF` |
 
-Ikke styret af `colors`: månedskortenes grøn/rød kommer fra `_cm_color`-measures (measures.md),
-og Power BI-temaet (`BaseThemes`) bruges kun til ting siden ikke sætter selv (fx tooltips).
+Ikke styret af `colors`: månedskortenes grøn/rød kommer fra `_cm_color`-measures (measures.md).
+
+**Resten af rapporten:** med `colors` registrerer generatoren også et Power BI-tema
+(`pbip-layout-theme.json`) med samme farver: sidebaggrund (`page`), boksbaggrund og kant
+(`panel`, `border`), tekst (`ink`, `sub`) og dataserier (`teal`, `dark`, `gradLow` …). Så får de
+øvrige rapportsider samme udseende som dashboardet. `"theme": false` slår det fra; uden `colors`
+fjernes et tidligere tema.
 
 ## Varianter
 

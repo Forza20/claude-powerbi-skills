@@ -10,6 +10,7 @@ Layoutet er beskrevet i [layout.md](layout.md). Generatoren
 [config.example.json](config.example.json) er den oprindelige konfiguration
 (Data Modeling PBIP). DAX-skabeloner til manglende measures ligger i
 [measures.md](measures.md). Farvenøgler og færdige varianter står i [colors.md](colors.md).
+Brugerens faste valg (farver, KPI'er, sektioner, titel) kan gemmes som en profil: [profile.md](profile.md).
 
 Arbejd på dansk med brugeren.
 
@@ -31,6 +32,10 @@ Arbejd på dansk med brugeren.
    `<Navn>.SemanticModel/definition`. List tabeller, kolonner, measures og relationer.
    Forbinder MCP-serveren ikke: læs TMDL-filerne direkte (se "Uden powerbi-modeling-mcp").
 
+   **Profil:** Har brugeren en profil (en `.json` efter [profile.md](profile.md), fx nævnt eller
+   uploadet), så læs den nu. Det, profilen fastlægger, spørges der ikke om i trin 3 og 4. Nævn kort,
+   hvilke valg der kommer fra profilen.
+
 3. **Farver (kun med en bruger til stede).** Spørg med AskUserQuestion om brugeren har
    farvekoder (en `.md`-fil eller hex-koder) eller et screenshot af en hjemmeside/et brand, som
    farverne skal komme fra. Har brugeren ingen af delene, bruges *Standard* fra colors.md.
@@ -40,7 +45,10 @@ Arbejd på dansk med brugeren.
    - Sæt farverne med `colors`-nøglerne i colors.md. Udled de manglende toner fra primær- og
      accentfarven efter reglen under "Brand".
    - Tjek kontrasten (colors.md → Kontrast). Er en farve for lys som flise-baggrund, brug den som accent.
-   *I pipeline-tilstand:* spring trinnet over og brug *Standard* (ingen `colors`).
+   - Med egne farver får de øvrige rapportsider samme farver gennem et tema (`theme`, standard til).
+     Spørg kun, hvis rapporten har sider, brugeren måske vil beholde som de er.
+   *I pipeline-tilstand:* spring trinnet over. Brug profilens farver, hvis der er en profil (se
+   Pipeline-tilstand), ellers *Standard* (ingen `colors`).
 
 4. **Kortlæg pladserne.** Brug tabellen "Pladser der skal kobles til modellen" i
    [layout.md](layout.md). Find for hver plads det bedste eksisterende measure/kolonne;
@@ -57,7 +65,12 @@ Arbejd på dansk med brugeren.
      measures.md og opret det i trin 6. Gæt ikke på forretningsregler: spørg, hvis definitionen er uklar.
    - Fliserne fordeles jævnt over rækken: 1–4 fliser, aldrig huller. `kpis` i config.json har én
      post pr. valgt KPI i den valgte rækkefølge.
-   *I pipeline-tilstand:* brug forslaget KPI 1–4 fra tabellen uden at spørge.
+   **Sektionerne vælger brugeren også** (samme AskUserQuestion-runde, kun med en bruger til stede):
+   antal månedskort (0–3), antal fremhævningsfliser (0–2), og om søjlediagram og top-tabel skal med.
+   Svaret står i `sections` i config.json. Det, der fravælges, giver plads til resten (profile.md,
+   sidste punkt). Standard er alt med.
+   *I pipeline-tilstand:* brug profilens `kpis` og `sections`, ellers forslaget KPI 1–4 og alle
+   sektioner, uden at spørge.
 
 5. **Vis kortlægningen og eksemplerne, og få godkendelse.** Skriv config.json (trin 7) for hver
    farvevariant, og lav et HTML-eksempel med generatoren selv. Den skriver ingen rapportfiler i
@@ -80,6 +93,8 @@ Arbejd på dansk med brugeren.
 7. **Skriv config.json** i scratchpad med samme struktur som
    [config.example.json](config.example.json). Felter skrives `Tabel[Felt]`. Den valgte
    farvevariant står i `colors` (nøgler: colors.md); uden `colors` bruges *Standard*.
+   Valgte sektioner står i `sections`, temaet i `theme`, og titel/undertitel i `title`/`subtitle`
+   (felterne er beskrevet i profile.md).
    `topN.function`: 2 = distinct count, 0 = sum (OrderBy skal være en kolonne-aggregering,
    ikke et measure). TopN beholder uafgjorte, så tabellen kan vise mere end 10 rækker – nævn det
    i afrapporteringen (eller `layout-mapping.md`), eller tilføj et tiebreaker-measure. `navLabels` giver korte knaptekster (maks ~8 tegn).
@@ -111,6 +126,9 @@ Arbejd på dansk med brugeren.
 
 10. **Afrapportér** kort: hvad er bygget, hvilke tal der står hvor, nye measures, og
     eventuelle afvigelser fra layoutet og den valgte farvevariant.
+    Har brugeren valgt farver, KPI'er eller sektioner uden en profil: tilbyd at gemme valgene som
+    profil (profile.md), fx `profiles/<navn>.json` i brugerens projekt eller pipeline-repo. KPI'er
+    gemmes med measure-navn (`measure`), så profilen også passer på andre modeller med samme navne.
 
 11. **Tilbyd data catalog.** Spørg om skillen `pbip-catalog` skal køres nu (data catalog i Excel,
     lineage og dbdiagram.io-model ud fra projektet og `docs/layout-config.json`). Ved ja: indlæs
@@ -119,7 +137,9 @@ Arbejd på dansk med brugeren.
 
 ## Faste regler
 - Alle tal som hele tal (ingen K/M) — generatoren sætter `labelDisplayUnits` = 1.
-- Ret aldrig i eksisterende sider; kun dashboard-siden og `pages.json`.
+- Ret aldrig i eksisterende sider; kun dashboard-siden og `pages.json`. Undtagelse: med egne farver
+  registrerer generatoren et tema (`StaticResources/RegisteredResources/pbip-layout-theme.json` og
+  `customTheme` i `definition/report.json`), som de øvrige sider følger. Uden farver fjernes det igen.
 - Publicér aldrig til Fabric uden udtrykkelig besked.
 
 ## Pipeline-tilstand (kørt af en agent uden bruger)
@@ -127,7 +147,11 @@ Arbejd på dansk med brugeren.
 Gælder når skillen køres af en subagent, fx `layout-applier` i `/messy-pipeline`, eller når opgaven
 siger "pipeline-tilstand". En subagent kan ikke stille spørgsmål til brugeren, så:
 
-- **Trin 3 (farver):** spring over; brug *Standard* (ingen `colors` i config). Lav ingen HTML-eksempler.
+- **Profil:** har opgaven eller `run.json` (`profile`) en profilsti, så brug den profil til farver,
+  tema, KPI'er, sektioner og titel (profile.md). Ellers *Standard*: ingen `colors`, forslaget KPI 1–4
+  og alle sektioner. Skriv i `layout-mapping.md`, hvilken profil der blev brugt, og hvilke
+  profil-measures der ikke fandtes i modellen.
+- **Trin 3 (farver):** spørg ikke; brug profilen eller *Standard*. Lav ingen HTML-eksempler.
 - **Trin 5 (godkendelse):** skriv kortlægningstabellen (plads → measure/kolonne → værdi → nye
   measures → brugt fallback) til `layout-mapping.md` i kørselsmappen, og fortsæt uden at spørge.
   Vælg altid den plads-kobling, der står først i tabellen i layout.md; brug fallback kun når modellen

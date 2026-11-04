@@ -29,6 +29,12 @@ Alle tal vises som **hele tal** (ingen K/M-enheder).
 | 14 | Top 10-tabel | tableEx | 1072, 544, 832, 340 | række + 3 measures, data bars, rød gradient på %-kolonne, TopN 10 |
 | 15–16 | Fremhævninger | textbox + cardVisual | overskrift y 904 h 32; flise y 944 h 112; w 404; x 1072 / 1500 | tekst-measures (fx top-kategori, top-kanal) |
 
+Positionerne ovenfor gælder med alle sektioner. Med `sections` i config (profile.md) kan
+månedskort (0–3), fremhævninger (0–2), søjlediagram og tabel fravælges; det, der er tilbage,
+fordeles over samme område: månedskort og fremhævninger fylder deres række, søjle eller tabel
+alene får hele højre kolonne, uden fremhævninger går højre kolonne ned til y 1056, uden månedskort
+går trenden ned til y 1056, og uden både søjler og tabel bliver trenden 1808 px bred.
+
 ## Pladser der skal kobles til modellen
 | Plads | Forventet indhold | Fallback hvis modellen mangler det |
 |---|---|---|

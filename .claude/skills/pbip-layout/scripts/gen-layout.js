@@ -11,7 +11,7 @@ const pi = args.indexOf('--preview');
 const PREVIEW = pi >= 0 ? args.splice(pi, 2)[1] : null;
 const [reportDir, configPath] = args;
 if (!reportDir || !configPath || (pi >= 0 && !PREVIEW)) throw new Error('Usage: node gen-layout.js <ReportFolder> <config.json> [--preview <out.html>]');
-const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^﻿/, ''));
+const cfg = JSON.parse(fs.readFileSync(configPath, 'utf8').replace(/^\uFEFF/, ''));
 
 const PAGE_ID = cfg.pageId || '8d1e4c7a2b5f9e3d6c10';
 const pagesDir = path.join(reportDir, 'definition', 'pages');
@@ -183,6 +183,20 @@ if (kpis.length > 4) console.warn(`config.kpis has ${kpis.length} entries; only 
 const kn = Math.min(4, kpis.length), kw = Math.floor((1528 - (kn - 1) * 24) / kn);
 kpis.slice(0, kn).forEach((k, i) => card({ x: 376 + i * (kw + 24), y: 20, w: kw, h: 148, measure: k.measure, label: k.label }));
 
+// ---------- sections: which parts are shown (config "sections"); the rest takes the room ----------
+// Default (no "sections"): everything, at the original positions.
+const sec = cfg.sections || {};
+const monthlyList = (cfg.monthly || []).filter(Boolean).slice(0, sec.monthly ?? 3);
+const highlightList = (cfg.highlights || []).filter(Boolean).slice(0, sec.highlights ?? 2);
+const showBar = sec.bar !== false && !!cfg.bar, showTable = sec.table !== false && !!cfg.table;
+const rightCol = showBar || showTable;                       // bar + table column, x 1072–1904
+const BOTTOM = 1056;
+const trendW = rightCol ? 952 : 1808;
+const trendH = monthlyList.length || (!rightCol && highlightList.length) ? 548 : BOTTOM - 200;
+const monthlyRight = rightCol || highlightList.length ? 1048 : 1904;
+const rightBottom = highlightList.length ? 884 : BOTTOM;
+const spread = (x0, x1, n, gap) => { const w = Math.floor((x1 - x0 - (n - 1) * gap) / n); return Array.from({ length: n }, (_, i) => [x0 + i * (w + gap), w]); };
+
 // ---------- 4. trend line ----------
 const t = cfg.trend;
 add({
@@ -203,13 +217,12 @@ add({
   },
   visualContainerObjects: vco({ bg: C.panel, radius: 8, borderColor: C.border, title: t.title, titleSize: 13 }),
   drillFilterOtherVisuals: true,
-}, [96, 200, 952, 548], 1200);
+}, [96, 200, trendW, trendH], 1200);
 
-// ---------- 5. monthly tiles ----------
-[96, 422, 748].forEach((x, i) => {
-  const m = cfg.monthly[i];
-  if (!m) return;
-  const y = 772, w = 300, h = 284;
+// ---------- 5. monthly tiles (0–3, spread over the bottom-left row; 3 tiles = 300 px each) ----------
+spread(96, monthlyRight, monthlyList.length || 1, 26).slice(0, monthlyList.length).forEach(([x, w], i) => {
+  const m = monthlyList[i];
+  const y = 772, h = 284;
   // show:false alone still renders axis titles ("month_start", clipped value title)
   const hidden = extra => [{ properties: { show: bool(false), showAxisTitle: bool(false), gridlineShow: bool(false), ...extra } }];
   add({
@@ -228,9 +241,11 @@ add({
   card({ x: x + 12, y: y + 160, w: w - 24, h: 52, measure: m.labelMeasure, label: null, bg: null, valueSize: 12, valueColor: C.sub, pad: 2 });
 });
 
-// ---------- 6. bar chart ----------
+// ---------- 6. bar chart (optional) ----------
+// bar and table share the right column; alone, one takes all of it (both: 320 + 24 + 340 px)
+const rightH = rightBottom - 200, barH = showTable ? Math.round((rightH - 24) * 320 / 660) : rightH;
 const b = cfg.bar;
-add({
+if (showBar) add({
   visualType: 'clusteredBarChart',
   query: {
     queryState: {
@@ -258,10 +273,11 @@ add({
     howCreated: 'User',
   }] },
   drillFilterOtherVisuals: true,
-}, [1072, 200, 832, 320], 1600);
+}, [1072, 200, 832, barH], 1600);
 
-// ---------- 7. top-N table ----------
+// ---------- 7. top-N table (optional) ----------
 const tb = cfg.table;
+if (showTable) {
 const tableVisual = {
   visualType: 'tableEx',
   query: {
@@ -317,20 +333,21 @@ if (tb.topN) {
     howCreated: 'User',
   }] };
 }
-add(tableVisual, [1072, 544, 832, 340], 1700);
+const tableY = showBar ? 200 + barH + 24 : 200;
+add(tableVisual, [1072, tableY, 832, rightBottom - tableY], 1700);
+}
 
-// ---------- 8. highlight tiles ----------
-[1072, 1500].forEach((x, i) => {
-  const h = cfg.highlights[i];
-  if (!h) return;
+// ---------- 8. highlight tiles (0–2, spread over the bottom-right row; 2 tiles = 404 px each) ----------
+spread(1072, 1904, highlightList.length || 1, 24).slice(0, highlightList.length).forEach(([x, w], i) => {
+  const h = highlightList[i];
   add({
     visualType: 'textbox',
     objects: { general: [{ properties: { paragraphs: [
       { textRuns: [{ value: h.header, textStyle: { fontFamily: 'Segoe UI Semibold', fontSize: '15px', color: C.ink } }], horizontalTextAlignment: 'center' },
     ] } }] },
     visualContainerObjects: vco({ pad: 0 }),
-  }, [x, 904, 404, 32], 1800 + x);
-  card({ x, y: 944, w: 404, h: 112, measure: h.measure, label: null, valueSize: 28 });
+  }, [x, 904, w, 32], 1800 + x);
+  card({ x, y: 944, w, h: 112, measure: h.measure, label: null, valueSize: 28 });
 });
 
 // ---------- preview (HTML mock-up of exactly these visuals; no report files are written) ----------
@@ -440,6 +457,51 @@ for (const v of visuals) {
   fs.mkdirSync(d, { recursive: true });
   fs.writeFileSync(path.join(d, 'visual.json'), JSON.stringify(v, null, 2));
 }
+// ---------- report theme: the same colours on every page (only when colours were chosen) ----------
+// Registered as a custom theme next to the base theme. Without "colors" (or with "theme": false)
+// a theme written by an earlier run is removed again, so Standard leaves the report as it was.
+(function theme() {
+  // The validator wants the file name, the theme's "name" and the reference in report.json to be equal.
+  const NAME = 'pbip-layout-theme.json', REF = NAME;
+  const rjPath = path.join(reportDir, 'definition', 'report.json');
+  if (!fs.existsSync(rjPath)) return;
+  const rjRaw = fs.readFileSync(rjPath, 'utf8');
+  const rj = JSON.parse(rjRaw.replace(/^\uFEFF/, ''));
+  const rrDir = path.join(reportDir, 'StaticResources', 'RegisteredResources');
+  const pkgs = rj.resourcePackages = rj.resourcePackages || [];
+  let rr = pkgs.find(p => p.type === 'RegisteredResources');
+  const want = !!cfg.colors && cfg.theme !== false;
+  if (want) {
+    const th = {
+      name: REF,
+      dataColors: [C.teal, C.dark, C.gradLow, C.sub, C.navBtn, C.bar, C.trendLine, C.border],
+      background: C.panel, foreground: C.ink, tableAccent: C.teal,
+      textClasses: { title: { color: C.ink }, header: { color: C.ink }, label: { color: C.sub }, callout: { color: C.ink } },
+      visualStyles: {
+        page: { '*': { background: [{ color: { solid: { color: C.page } }, transparency: 0 }] } },
+        '*': { '*': {
+          background: [{ show: true, color: { solid: { color: C.panel } }, transparency: 0 }],
+          border: [{ color: { solid: { color: C.border } } }],
+          title: [{ fontColor: { solid: { color: C.ink } } }],
+        } },
+      },
+    };
+    fs.mkdirSync(rrDir, { recursive: true });
+    fs.writeFileSync(path.join(rrDir, NAME), JSON.stringify(th, null, 2));
+    if (!rr) { rr = { name: 'RegisteredResources', type: 'RegisteredResources', items: [] }; pkgs.push(rr); }
+    rr.items = (rr.items || []).filter(i => i.name !== REF && i.type !== 'CustomTheme').concat([{ name: REF, path: NAME, type: 'CustomTheme' }]);
+    const base = (rj.themeCollection || {}).baseTheme || {};
+    rj.themeCollection = { ...(rj.themeCollection || {}), customTheme: { name: REF, reportVersionAtImport: base.reportVersionAtImport, type: 'RegisteredResources' } };
+  } else if (rj.themeCollection && rj.themeCollection.customTheme && rj.themeCollection.customTheme.name === REF) {
+    delete rj.themeCollection.customTheme;
+    if (rr) { rr.items = (rr.items || []).filter(i => i.name !== REF); if (!rr.items.length) pkgs.splice(pkgs.indexOf(rr), 1); }
+    fs.rmSync(path.join(rrDir, NAME), { force: true });
+    try { if (!fs.readdirSync(rrDir).length) fs.rmdirSync(rrDir); } catch (_) {}
+  } else return;
+  fs.writeFileSync(rjPath, JSON.stringify(rj, null, 2) + (/\n$/.test(rjRaw) ? '\n' : ''));
+  console.log(want ? `Theme ${NAME} registered (all pages)` : `Theme ${NAME} removed`);
+})();
+
 pagesJson.pageOrder = [PAGE_ID, ...pagesJson.pageOrder.filter(p => p !== PAGE_ID)];
 pagesJson.activePageName = PAGE_ID;
 fs.writeFileSync(pagesJsonPath, JSON.stringify(pagesJson, null, 2));
