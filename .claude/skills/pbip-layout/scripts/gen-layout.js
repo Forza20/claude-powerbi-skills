@@ -297,8 +297,8 @@ if (tb.gradientMeasure) {
     properties: { backColor: { solid: { color: { expr: { FillRule: {
       Input: measureField(tb.gradientMeasure),
       FillRule: { linearGradient2: {
-        min: { color: { Literal: { Value: `'${C.gradLow}'` } } },
-        max: { color: { Literal: { Value: `'${C.gradHigh}'` } } },
+        min: { color: { Literal: { Value: `'${tb.gradientHigherIsWorse ? C.gradHigh : C.gradLow}'` } } },
+        max: { color: { Literal: { Value: `'${tb.gradientHigherIsWorse ? C.gradLow : C.gradHigh}'` } } },
         nullColoringStrategy: { strategy: { Literal: { Value: "'noColor'" } } },
       } } } } } } } },
     selector: { data: [{ dataViewWildcard: { matchingOption: 1 } }], metadata: qref(tb.gradientMeasure) },

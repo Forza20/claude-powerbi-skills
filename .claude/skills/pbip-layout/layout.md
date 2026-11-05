@@ -12,7 +12,7 @@ Alle tal vises som **hele tal** (ingen K/M-enheder).
 | Sekundær tekst | `#605E5C` |
 | Kantlinjer på kort/diagrammer | `#C8C6C4`, radius 8 (KPI-fliser radius 16) |
 | Sparkline-fyld | `#E1DFDD` |
-| Tabel-gradient (lav → høj) | `#E36C78` → `#FDEDEF` |
+| Tabel-gradient (lav → høj) | `#E36C78` → `#FDEDEF`; byttes om med `table.gradientHigherIsWorse: true` for rater hvor højt er dårligt (returrate, churn) |
 | Fald i månedskort | `#D64550` (via farve-measure) |
 
 ## Placeringer (x, y, bredde, højde)
