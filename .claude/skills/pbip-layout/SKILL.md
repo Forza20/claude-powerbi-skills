@@ -108,6 +108,8 @@ Arbejd på dansk med brugeren.
    `topN.function`: 2 = distinct count, 0 = sum (OrderBy skal være en kolonne-aggregering,
    ikke et measure). TopN beholder uafgjorte, så tabellen kan vise mere end 10 rækker – nævn det
    i afrapporteringen (eller `layout-mapping.md`), eller tilføj et tiebreaker-measure. `navLabels` giver korte knaptekster (maks ~8 tegn).
+   Er `table.gradientMeasure` en rate, hvor højt er dårligt (returrate, churn, afbestillinger), så sæt
+   `table.gradientHigherIsWorse: true` – ellers bliver de bedste rækker røde.
    Gem også en kopi som `<projektmappe>/docs/layout-config.json` (opret `docs/`), så
    pbip-catalog kan tagge felterne med deres plads på dashboardet.
 

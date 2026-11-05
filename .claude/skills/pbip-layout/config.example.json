@@ -38,6 +38,7 @@
     "sortMeasure": "_measures[total_orders]",
     "dataBarMeasure": "_measures[total_orders]",
     "gradientMeasure": "_measures[gross_margin_pct]",
+    "gradientHigherIsWorse": false,
     "topN": { "count": 10, "orderByColumn": "fact_sales[order_id]", "function": 2 }
   },
   "highlights": [
