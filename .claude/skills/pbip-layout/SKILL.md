@@ -1,6 +1,7 @@
 ---
 name: pbip-layout
 description: Anvender det gemte "Salgsoverblik"-dashboardlayout (mørke KPI-fliser, trend med forecast, månedskort, kategori-søjler, top 10-tabel, fremhævningsfliser) på et Power BI PBIP-projekt og kobler det til projektets egne measures. Trigger ALTID når brugeren skriver `anvend "layout.md"` (også uden anførselstegn, fx "anvend layout.md") sammen med en PBIP-fil/-mappe eller et åbent PBIP-projekt i Power BI Desktop, og når en pipeline-agent (fx `layout-applier`) bliver bedt om at anvende layoutet – se "Pipeline-tilstand".
+disable-model-invocation: true
 ---
 
 # Anvend layout.md på et PBIP-projekt

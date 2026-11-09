@@ -1,6 +1,7 @@
 ---
 name: pbip-catalog
 description: Laver data catalog (Excel), data lineage (Markdown + Mermaid) og en datamodel til dbdiagram.io (DBML) for et Power BI PBIP-projekt, typisk lige efter pbip-layout. Felter på dashboard-siden tagges med deres plads (KPI 1, Månedskort 2 …), lineage går fra datakilde gennem Power Query-trin og DAX til visual, og godkendte beskrivelser kan skrives tilbage som `///` i TMDL. Trigger ALTID når brugeren skriver "Katalog:" efterfulgt af et projektnavn, når pbip-layout er færdig og brugeren siger ja til katalog, eller når brugeren beder om data catalog, datakatalog, lineage, dbdiagram, DBML eller dbdocs for et PBIP-projekt.
+disable-model-invocation: true
 ---
 
 # PBIP Catalog – data catalog, lineage og dbdiagram.io
