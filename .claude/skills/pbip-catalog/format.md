@@ -16,7 +16,7 @@ beskrivelsen ikke forsvinder i stilhed.
 |---|---|
 | Beskrivelse | Forretningsbeskrivelse. Skrives tilbage som `///` når Status = Godkendt. |
 | Ejer | Dataejer / ansvarlig. |
-| Følsomhed | Fx Offentlig, Intern, Fortrolig, PII. Forudfyldes "Mulig PII - vurdér" ud fra kolonnenavn. |
+| Følsomhed | Fx Offentlig, Intern, Fortrolig, PII. Forudfyldes "Mulig PII - vurdér" ud fra kolonnenavn – ikke for en kolonne med `annotation PII = not personal` i TMDL (gennemgået; "Mulig PII" siger så "Nej (gennemgået: ikke persondata)"). |
 | Opstrøms kilde | Hvor data kommer fra før Power BI. Udfyldes automatisk (se nedenfor); egen tekst bevares. |
 | Status | `Mangler` · `Bør oversættes` · `AI-forslag` · `Fra model` · `Redigeret` · `Godkendt` |
 

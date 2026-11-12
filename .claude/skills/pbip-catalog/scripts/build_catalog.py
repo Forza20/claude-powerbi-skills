@@ -535,6 +535,10 @@ def build(parsed, slots, prev, ai, pii_reason, sql=None):
                 continue
             key = fkey(t['name'], c['name'])
             pii = pii_reason(c['name'], t['name'])
+            # `annotation PII = not personal` på kolonnen: gennemgået af en person – markeres ikke igen
+            reviewed = bool(pii) and str((c.get('annotations') or {}).get('PII', '')).strip().strip('"').lower() == 'not personal'
+            if reviewed:
+                pii = ''
             origin = c.get('origin') or {}
             row = {
                 'Nøgle': key, 'Tabel': t['name'], 'Kolonne': c['name'],
@@ -542,7 +546,7 @@ def build(parsed, slots, prev, ai, pii_reason, sql=None):
                 'Skjult': 'Ja' if c['isHidden'] else '',
                 'Nøglefelt': 'Ja' if (c.get('isKey') or c['name'] in pk_cols) else '',
                 'Beregnet': 'DAX' if c.get('isCalculated') else '',
-                'Mulig PII': f'Ja ({pii})' if pii else '',
+                'Mulig PII': f'Ja ({pii})' if pii else ('Nej (gennemgået: ikke persondata)' if reviewed else ''),
                 'Oprindelse': origin_text(origin) if not c.get('isCalculated') else 'Beregnet kolonne (DAX)',
                 'Kilde': source_text(origin.get('source')),
                 'Power Query-trin': lineage_text(c.get('lineage')),
@@ -1006,7 +1010,7 @@ def write_dbml(parsed, cat, path, project):
                 note.append('Beregnet (DAX): ' + short(c.get('expression', ''), 200))
             elif row['Oprindelse']:
                 note.append('Oprindelse: ' + row['Oprindelse'])
-            if row['Mulig PII']:
+            if row['Mulig PII'].startswith('Ja'):
                 note.append('Mulig PII')
             if row['Dashboard-plads']:
                 note.append('Dashboard: ' + row['Dashboard-plads'])
