@@ -55,6 +55,10 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
    Brug `--fence github` hvis lineage.md skal vises på GitHub i stedet for Azure DevOps-wiki.
    Tilføj `--html`, hvis brugeren har bedt om lineage-oversigten som HTML (`docs/lineage.html`).
    Ellers tilbydes den i trin 4.
+   **Hurtig vej** (pipeline-kørsler, eller når trin 3 følger lige efter): tilføj `--missing-only`. Den skriver
+   kun `missing_descriptions.json` – ingen Excel, lineage, DBML eller catalog.json, og openpyxl importeres
+   kun, hvis der findes en tidligere catalog.xlsx – så hele outputtet skrives én gang, af kørslen i trin 3
+   (med `--html` og de øvrige flag der).
    Scriptet skriver en JSON-opsummering: antal, beskrivelsesstatus, fjernede felter, ændringer siden
    sidste kørsel (`changesSinceLastRun`) og engelske beskrivelser, der skal oversættes (`toTranslate`).
    Ændringerne står på fanen **Ændringer**, så en ny version kan gennemgås uden at læse hele kataloget.

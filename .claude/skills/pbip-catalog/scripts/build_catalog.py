@@ -1078,6 +1078,9 @@ def main():
                     help='SQL-filer eller -mapper (views, INSERT ... SELECT) til Opstrøms kilde')
     ap.add_argument('--html', action='store_true',
                     help='skriv også lineage.html: lineage-oversigt på tabelniveau (filer → lag → model → sider)')
+    ap.add_argument('--missing-only', action='store_true',
+                    help='skriv kun missing_descriptions.json (ingen Excel, lineage, DBML eller catalog.json) – en '
+                         'hurtig første kørsel, når AI-beskrivelserne og den fulde kørsel følger lige efter')
     a = ap.parse_args()
 
     pbip = Path(a.pbip).resolve()
@@ -1109,6 +1112,13 @@ def main():
         from sql_lineage import SqlLineage
         sql = SqlLineage().load(a.sql)
     cat = build(parsed, slots, prev, ai, pii_reason, sql)
+    if a.missing_only:
+        # openpyxl (flere sekunder at importere på Windows) skal kun bruges, når der er en tidligere catalog.xlsx
+        (out / 'missing_descriptions.json').write_text(
+            json.dumps(cat['missing'], indent=2, ensure_ascii=False), encoding='utf-8')
+        print(json.dumps({'project': project, 'out': str(out), 'missingOnly': True,
+                          'missingDescriptions': len(cat['missing'])}, indent=2, ensure_ascii=False))
+        return
     old_json = out / 'catalog.json'
     cat['changes'], cat['changesSince'] = [], ''
     if old_json.is_file():
