@@ -95,7 +95,11 @@ Arbejd med brugeren på brugerens sprog.
 
 8. **config.json** (scratchpad) som [config.example.json](config.example.json): `template`, `pages`,
    `fields` (`Tabel[Felt]` eller `null`), `labels`, `texts`, `reverseScales` (skabelonfelter hvis
-   farveskalaer skal gå den anden vej), `title`/`subtitle` eller `logo`, `colors`, `theme`. Gem en kopi som `<projektmappe>/docs/layout-config.json` (opret `docs/`), så pbip-catalog kan
+   farveskalaer skal gå den anden vej), `title`/`subtitle` eller `logo`, `colors`, `theme`,
+   `completeMonth` (`Tabel[Kolonne]`, en sand/falsk kolonne i datotabellen, der er sand for hele
+   måneder, fx `dim_date[is_complete_month]`; `suggest-fields.js` foreslår den). Månedskortene (KPI)
+   filtreres til hele måneder, ellers ender de i en tom eller halv måned og viser "(Tom)" / -100 %.
+   Mangler kolonnen: foreslå at tilføje den i datotabellen (anbefalet) eller accepter advarslen. Gem en kopi som `<projektmappe>/docs/layout-config.json` (opret `docs/`), så pbip-catalog kan
    mærke felterne med deres faneblad.
 
 9. **Generér og tjek.**
@@ -128,7 +132,10 @@ Arbejd med brugeren på brugerens sprog.
     spørg ikke – skriv i `layout-mapping.md`, at kataloget kan køres bagefter.
 
 ## Faste regler
-- Fanebladene er 1280 × 720 og beholder skabelonens layout, formater og visningsenheder (K, M).
+- Fanebladene er 1280 × 720 og beholder skabelonens layout og formater.
+- Visningsenheder er altid "Ingen": tal vises aldrig som "tusind", K eller mio., men som heltal eller
+  decimaltal efter measurets formatstreng. `gen-report.js` sætter det på hvert visual
+  (`scripts/display-units.js`); en ældre rapport rettes med `node scripts/display-units.js <Navn>.Report`.
 - Brugeren vælger fanebladene, hver gang. Byg aldrig et faneblad, brugeren ikke har valgt.
 - Ændr aldrig rapportens egne faneblade. Det generatoren ændrer ud over sine faneblade: `pages.json` (dens
   faneblade først), bogmærker til dens faneblade, dens ikoner og et logo, basistemaet (→ skabelonens) og

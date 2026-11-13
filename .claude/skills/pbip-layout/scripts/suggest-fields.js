@@ -70,14 +70,17 @@ for (const [tf, f] of Object.entries(T.fields)) {
   fields[tf] = null;
   if (hint.make) { how[tf] = `make: ${hint.make}`; make.add(hint.make); } else how[tf] = 'none';
 }
-const out = { template: key, pages, fields, how, decisions, make: [...make],
+// the month KPI cards are filtered to complete months (gen-report.js → completeMonth)
+const completeMonth = (cfg && cfg.completeMonth) || find({ table: 'date' }, 'column', ['complete_month|is_complete|hel_?maaned|fuld_?maaned|komplet']);
+const out = { template: key, pages, fields, how, decisions, make: [...make], completeMonth,
   next: [
     make.size ? `Create with measures.md (${[...make].join(', ')}), then run this again.` : null,
     decisions.length ? 'Ask the decisions (SKILL.md step 7) – a fallback changed the meaning.' : null,
+    completeMonth ? null : 'No complete-month column in the date table: the month KPI cards can end in an empty month – add a true/false column (e.g. is_complete_month) or accept the warning.',
     Object.values(how).includes('none') ? 'Fields with "none": pick a model field yourself or keep null (ask the user when it removes a visual).' : null,
   ].filter(Boolean) };
 if (cfgPath) {
-  const merged = { ...(cfg || { template: key }), pages, fields };
+  const merged = { ...(cfg || { template: key }), pages, fields, ...(completeMonth ? { completeMonth } : {}) };
   fs.writeFileSync(cfgPath, JSON.stringify(merged, null, 1) + '\n');
   out.written = cfgPath;
 }

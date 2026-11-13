@@ -12,6 +12,8 @@
 //   labels     { "<template field>": "text" } – display names (default: the model field's name, made readable)
 //   texts      { "<text in the template>": "new text" } – titles and text boxes
 //   title / subtitle / logo   top-left of the first page: title text, or a logo image (path to .png/.jpg)
+//   completeMonth  "Table[Column]" – a true/false column that is true for complete months (e.g.
+//              dim_date[is_complete_month]); the month KPI cards are filtered to it. Left out = a warning
 //   colors     colour keys (template.json → colors); left out = the template's own colours
 //   theme      false = do not register the template theme (other pages keep the report's theme)
 //
@@ -23,6 +25,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const zlib = require('zlib');
+const { fixVisual: noDisplayUnits } = require('./display-units');
 
 const args = process.argv.slice(2);
 const pi = args.indexOf('--preview');
@@ -67,6 +70,14 @@ for (const k of needed) {
   const m = /^'?(.+?)'?\[(.+)\]$/.exec(String(v));
   if (!m) { errors.push(`config.fields["${k}"]: "${v}" – use Table[Field]`); continue; }
   fieldMap[k] = { table: m[1], name: m[2] };
+}
+// month KPIs (visual type kpi) show the latest complete month: a filter on a true/false column, e.g.
+// dim_date[is_complete_month] – without it the trend axis ends in an empty month and the card says "(Blank)"
+let completeMonth = null;
+if (cfg.completeMonth != null) {
+  const m = /^'?(.+?)'?\[(.+)\]$/.exec(String(cfg.completeMonth));
+  if (!m) errors.push(`config.completeMonth: "${cfg.completeMonth}" – use Table[Column], a true/false column that is true for complete months`);
+  else completeMonth = { table: m[1], name: m[2] };
 }
 if (errors.length) fail();
 // a template table maps to the table most of its fields went to (for From entries without a field)
@@ -431,6 +442,17 @@ for (const id of fs.readdirSync(pagesDir)) if (ours.has(id)) fs.rmSync(path.join
 // keep the report's own $schema versions where it has them
 const schemaOf = (file) => { for (const id of pagesJson.pageOrder || []) { if (ours.has(id)) continue; const d = path.join(pagesDir, id); const f = file === 'page.json' ? path.join(d, 'page.json') : null; if (f && fs.existsSync(f)) try { return readJ(f).$schema; } catch (_) { /* next */ } } return null; };
 const pageSchema = schemaOf('page.json');
+function onlyCompleteMonths(json) {
+  if (!completeMonth) { if (!warnings.includes(NO_COMPLETE)) warnings.push(NO_COMPLETE); return; }
+  const col = (src) => ({ Column: { Expression: { SourceRef: src }, Property: completeMonth.name } });
+  const fc = (json.filterConfig = json.filterConfig || {});
+  fc.filters = (fc.filters || []).filter((f) => f.name !== 'FilterCompleteMonth');
+  fc.filters.push({ name: 'FilterCompleteMonth', field: col({ Entity: completeMonth.table }), type: 'Categorical',
+    filter: { Version: 2, From: [{ Name: 'd', Entity: completeMonth.table, Type: 0 }],
+      Where: [{ Condition: { In: { Expressions: [col({ Source: 'd' })], Values: [[{ Literal: { Value: 'true' } }]] } } }] },
+    howCreated: 'User' });
+}
+const NO_COMPLETE = 'config.completeMonth is not set: the month KPI cards can end in an empty or half month ("(Blank)", -100 %) – map it to a true/false complete-month column';
 for (const p of pages) {
   const d = path.join(pagesDir, p.id);
   fs.mkdirSync(path.join(d, 'visuals'), { recursive: true });
@@ -438,6 +460,8 @@ for (const p of pages) {
   fs.writeFileSync(path.join(d, 'page.json'), JSON.stringify(p.page, null, 2) + '\n');
   for (const v of p.visuals) {
     fs.mkdirSync(path.join(d, 'visuals', v.name), { recursive: true });
+    noDisplayUnits(v.json); // never "tusind"/K/mio. - always the measure's own number format
+    if (v.json.visual && v.json.visual.visualType === 'kpi') onlyCompleteMonths(v.json);
     fs.writeFileSync(path.join(d, 'visuals', v.name, 'visual.json'), JSON.stringify(v.json, null, 2) + '\n');
   }
 }
