@@ -53,9 +53,12 @@ Arbejd med brugeren på brugerens sprog.
    - Højst 2 varianter (fx *Standard* og *Brand*); de adskiller sig kun i farver.
    *I pipeline-tilstand:* profilens farver, ellers *Standard*.
 
-5. **Kobl skabelonfelterne.** For hvert felt de valgte faneblade bruger (template.json → `fields`, med de
-   faneblade der bruger det): find modellens bedste match med layout.md's tabeller – det forventede
-   indhold først, så reserveløsningen, `null` når intet passer. Kør DAX for at kende værdierne. Tjek
+5. **Kobl skabelonfelterne.** Start med forslaget:
+   `node "<skill-mappe>/scripts/suggest-fields.js" "<.SemanticModel-mappe>" --config "<config.json>"`
+   (config.json med `template` og `pages`; det udfylder `fields` ud fra navne i
+   `templates/<nøgle>/field-hints.json` og skriver `how` pr. felt – navn, reserveløsning, `make: <opskrift>`
+   eller ingen – og de `decisions` en reserveløsning gav). Tjek det derefter felt for felt med layout.md's
+   tabeller – det forventede indhold først, så reserveløsningen, `null` når intet passer. Kør DAX for at kende værdierne. Tjek
    betydninger: er en "line total" før eller efter rabat; er en rate "høj = dårlig" (skabelonen: returrate).
    Når en reserveløsning ændrer betydningen: sæt `labels` og `texts` (template.json → `pages[].texts` har
    hver tekst præcist). `node gen-report.js … --preview` lister hvert felt, der ikke er koblet.
@@ -99,15 +102,16 @@ Arbejd med brugeren på brugerens sprog.
    ```
    node "<skill-mappe>/scripts/gen-report.js" "<.Report-mappe>" "<config.json>"
    node "<skill-mappe>/scripts/check-fields.js" "<.Report-mappe>" "<.SemanticModel-mappe>"
-   powerbi-report-author validate "<.Report-mappe>"
+   node "<skill-mappe>/scripts/validate-report.js" "<.Report-mappe>"
    ```
    `gen-report.js` skriver fanebladene (med id'er), bogmærkerne, `dropped` (udeladte visuals og hvorfor) og
    `notes` (felter udeladt af et visual, basistema ændret). `check-fields.js` skal sige `ok: true`: hvert
-   felt rapporten bruger findes i modellen. Valideringsfund der stammer fra skabelonens kilderapport (Desktop
-   skrev dem) og er forventede: `PBIR_FORMATTING_PROP_NESTED` på `anomalyDetection` (omsætningstrenden),
-   `PBIR_FILTER_NAME_DUPLICATE_GLOBAL`, `PBIR_VISUAL_TYPE_DEPRECATED` (`map`, `qnaVisual`),
+   felt rapporten bruger findes i modellen. `validate-report.js` kører `powerbi-report-author validate` og
+   holder skabelonens kendte fund (`known`) adskilt fra nye (`new`); `ok: true` = ingen ny fejl. De kendte
+   stammer fra skabelonens kilderapport (Desktop skrev dem): `PBIR_FORMATTING_PROP_NESTED` på
+   `anomalyDetection` (omsætningstrenden), `PBIR_VISUAL_TYPE_DEPRECATED` (`map`, `qnaVisual`),
    `PBIR_DRILLTHROUGH_BACK_BUTTON_MISSING`, `PBIR_JSON_FILE_NO_SCHEMA` på `.pbip`/`definition.pbir`,
-   `PBIR_SCHEMA_UNREACHABLE` offline. Ret alle andre fejl. En ny kørsel erstatter fanebladene fra den forrige
+   `PBIR_SCHEMA_UNREACHABLE` offline – "ret" dem ikke. Ret alt under `new`. En ny kørsel erstatter fanebladene fra den forrige
    (samme id'er) og lader rapportens egne faneblade være.
 
 10. **Vis det i Desktop og tag et screenshot** efter powerbi-report-cli's preview-regler (`--status` →
