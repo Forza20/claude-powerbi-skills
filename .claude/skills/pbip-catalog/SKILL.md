@@ -29,9 +29,11 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
   brug den kommando, der virker, i hele kørslen.
 - PBIP i TMDL-format (`<Navn>.SemanticModel/definition/`). `model.bim` kan katalogiseres, men
   tilbageskrivning kræver TMDL. Er det en .pbix: bed om Filer → Gem som → *.pbip, og stop.
-- Dashboard-tagging: `docs/layout-config.json` fra pbip-layout. Mangler den, men findes
-  pbip-layout-siden (id `8d1e4c7a2b5f9e3d6c10`), udledes pladserne af visual-positionerne
-  (layout.md). Ellers laves kataloget uden dashboard-tags — sig det til brugeren.
+- Dashboard-tagging: `docs/layout-config.json` fra pbip-layout. Med rapportskabelonen (`template`,
+  `pages`, `fields`) mærkes hvert koblet felt med de faneblade, der bruger det (Exec Dashboard, Product
+  Detail …; template.json siger hvilke). Uden filen mærkes felterne på skabelonens faneblade (faste id'er)
+  med fanebladets navn; et ældre enkeltsidet layout (`8d1e4c7a2b5f9e3d6c10`, config med `kpis`) giver
+  stadig sine pladser (KPI 1 …). Ellers laves kataloget uden dashboard-tags — sig det til brugeren.
 
 ## Arbejdsgang
 

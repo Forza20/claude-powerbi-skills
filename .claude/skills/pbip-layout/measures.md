@@ -1,71 +1,81 @@
-# DAX-skabeloner til layoutet
+# Measures og parametre skabelonen skal bruge
 
-Erstat `<Fact>`, `<DateTable>`, `<Base>` osv. med modellens navne. Opret i modellens
-measure-tabel; hjælpe-measures i display folder `Dashboard`. Test hver measure med DAX
-efter oprettelse.
+Skabelonens faneblade bruger measures, en model ofte mangler (sidste måned, targets, afvigelser,
+prisjustering), og tre parametre. Lav kun det, de valgte faneblade skal bruge (template.json → `fields`,
+filtreret på faneblad), og som modellen ikke har. Navne: modellens konvention – snake_case i en
+pipeline-power-bi-kørsel (`previous_month_sales`), ellers som modellens egne measures. Test hver ny measure
+med DAX.
+
+**Hvor de skal hen:**
+- **En pipeline-power-bi-kørsel** (kørselsmappen har `choices.json` med `build`): tilføj measures til
+  `build.measures[]` (mappe `Template`) og parametrene til `build.parameters[]` (pipeline-power-bi
+  `references/build-spec.md`), og kør `node .claude\skills\pipeline-power-bi\scripts\rebuild.js runs\<run-id>`.
+  Skriv dem aldrig i hånden i TMDL'en dér – næste rebuild ville fjerne dem.
+- **Andre projekter:** powerbi-modeling-mcp (`measure_operations`, `table_operations` til parametrene),
+  eller TMDL'en direkte med Desktop lukket (SKILL.md → "Uden powerbi-modeling-mcp").
+
+`<Revenue>`, `<Orders>`, `<Profit>`, `<Returns>`, `<Customers>`, `<Cost>` er de measures, der er koblet til
+skabelonens `Total Revenue`, `Total Orders` …; `<Date>` er datotabellens datokolonne.
 
 > Brug **ikke** variabelnavnet `LastDate` – det kolliderer med DAX-funktionen `LASTDATE`.
 
-## Månedsakse (kalkuleret kolonne på datotabellen, hvis den mangler)
+## Forrige måned (Exec: de tre månedlige KPI'er; Product: targets)
 ```dax
-MonthStart = DATE(YEAR(<DateTable>[Date]), MONTH(<DateTable>[Date]), 1)
+previous_month_sales  = CALCULATE ( [<Revenue>], DATEADD ( <Date>, -1, MONTH ) )
+previous_month_orders = CALCULATE ( [<Orders>], DATEADD ( <Date>, -1, MONTH ) )
+previous_month_<x>    = CALCULATE ( [<Returns>], DATEADD ( <Date>, -1, MONTH ) )   -- den tredje månedlige KPI
+previous_month_<p>    = CALCULATE ( [<Profit>], DATEADD ( <Date>, -1, MONTH ) )    -- til profit-target
 ```
-formatString `mmm yyyy`. Kør derefter en Calculate-refresh af datotabellen.
+Format som basis-measuren. KPI-visuals sammenligner seneste måned med måneden før; slutter dataene midt i
+en måned, så sæt KPI'ens datofilter til hele måneder (`is_complete_month = TRUE` på datotabellen, når den
+har den).
 
-## Seneste måned / forrige måned (én pr. månedskort)
+## Targets (Product Detail: de tre målere)
+Brug modellens egne targets, når den har dem (en targettabel: `target_revenue`). Ellers skabelonens regel –
+sidste måned plus en vækst, brugeren bekræfter (skabelonen: 10 %):
 ```dax
-<base>_cm =
-VAR MaxSalesDate = CALCULATE(MAX(<Fact>[<OrderDate>]), REMOVEFILTERS(<DateTable>))
-RETURN CALCULATE([<Base>], REMOVEFILTERS(<DateTable>),
-    <DateTable>[Date] > EOMONTH(MaxSalesDate, -1),
-    <DateTable>[Date] <= EOMONTH(MaxSalesDate, 0))
-
-<base>_pm =
-VAR MaxSalesDate = CALCULATE(MAX(<Fact>[<OrderDate>]), REMOVEFILTERS(<DateTable>))
-RETURN CALCULATE([<Base>], REMOVEFILTERS(<DateTable>),
-    <DateTable>[Date] > EOMONTH(MaxSalesDate, -2),
-    <DateTable>[Date] <= EOMONTH(MaxSalesDate, -1))
-
-<base>_label =
-VAR cm = [<base>_cm]
-VAR pm = [<base>_pm]
-RETURN "Forrige måned: " & FORMAT(pm, "#,0") & " (" & FORMAT(DIVIDE(cm - pm, pm), "+0.0%;-0.0%;0.0%") & ")"
-
-<base>_cm_color = IF([<base>_cm] < [<base>_pm], "#D64550", "#252423")
+order_target   = [previous_month_orders] * ( 1 + 0.10 )
+sales_target   = [previous_month_sales] * ( 1 + 0.10 )
+profit_target  = [previous_month_<p>] * ( 1 + 0.10 )
+order_target_gap  = [<Orders>] - [order_target]
+sales_target_gap  = [<Revenue>] - [sales_target]       -- eller - [target_revenue]
+profit_target_gap = [<Profit>] - [profit_target]
 ```
 
-For nøgletal, hvor lavere er bedre (returer, annulleringer, churn), vendes farven: en stigning er
-`#D64550`, et fald `#252423`:
+## Prisjustering (Product Detail: profittrend med what-if-skyder)
+Parameter (pipeline-spec):
+```json
+{ "kind": "whatIf", "name": "price_adjustment_pct", "min": -1, "max": 1, "step": 0.1, "default": 0, "format": "0%" }
+```
+Den laver tabellen `price_adjustment_pct` (én kolonne, GENERATESERIES) og measuren
+`price_adjustment_pct_value`. Derefter:
 ```dax
-<base>_cm_color = IF([<base>_cm] > [<base>_pm], "#D64550", "#252423")
+adjusted_sales        = [<Revenue>] * ( 1 + [price_adjustment_pct_value] )
+adjusted_gross_margin = [adjusted_sales] - [<Cost>]
+```
+Kobl `Price Adjustment (%)[Price Adjustment (%)]` → `price_adjustment_pct[price_adjustment_pct]` og
+`Measure Table[Adjusted Profit]` → `adjusted_gross_margin`.
+
+## Feltparametre (Product og Customer Detail: "hvilken measure ser jeg")
+```json
+{ "kind": "fields", "name": "product_metric_selection", "items": [ { "label": "Orders", "measure": "orders" },
+  { "label": "Revenue", "measure": "total_sales" }, { "label": "Profit", "measure": "gross_margin" },
+  { "label": "Margin %", "measure": "gross_margin_pct" } ] }
+{ "kind": "fields", "name": "customer_metric_selection", "items": [ { "label": "Customers", "measure": "customers" },
+  { "label": "Revenue per customer", "measure": "sales_per_customer" } ] }
+```
+Hver laver en tabel med `<navn>` (sliceren), `<navn>_fields` og `<navn>_order` (skjulte). Kobl
+`Product Metric Selection[Product Metric Selection]` → `product_metric_selection[product_metric_selection]`
+og `… Fields` → `product_metric_selection[product_metric_selection_fields]` (det samme for Customer). Uden
+for en pipeline-kørsel: lav dem i Desktop (Modellering → Ny parameter → Felter) eller som beregnede tabeller
+med `NAMEOF`, som skabelonens kilderapport gør.
+
+## Kunder (Customer Detail)
+```dax
+customers          = DISTINCTCOUNT ( <Fact>[<kundenøgle>] )
+sales_per_customer = DIVIDE ( [<Revenue>], [customers] )
 ```
 
-**Slutter data midt i en måned** (fx sidste dato 7. september): sammenlign seneste *hele* måned med
-måneden før – flyt vinduerne ovenfor én måned tilbage, eller brug modellens "seneste hele måned"-measure.
-Det samme gælder **sparklinen** (`sparkMeasure` i config): ellers ender kurven med et brat fald i den
-ufuldstændige måned. Brug datotabellens `is_complete_month`, hvis den findes, ellers:
-```dax
-<base>_spark =
-VAR MaxSalesDate = CALCULATE(MAX(<Fact>[<OrderDate>]), REMOVEFILTERS(<DateTable>))
-VAR LastFullDay  = IF(MaxSalesDate = EOMONTH(MaxSalesDate, 0), MaxSalesDate, EOMONTH(MaxSalesDate, -1))
-RETURN IF(MAX(<DateTable>[Date]) <= LastFullDay, [<Base>])
-```
-Ét `_spark`-measure pr. månedskort; trend-grafen bruger samme regel.
-
-## Margin (hvis der findes kostpris)
-```dax
-total_cost       = SUMX(<Fact>, <Fact>[quantity] * <Fact>[cost])     -- tjek om cost er pr. stk. eller pr. linje
-gross_margin     = [<Revenue>] - [total_cost]
-gross_margin_pct = DIVIDE([gross_margin], [<Revenue>])               -- formatString 0.0%
-```
-
-## "Top"-tekst til fremhævningsfliser
-```dax
-top_<dim> =
-VAR Items = FILTER(VALUES(<DimTable>[<Column>]), NOT ISBLANK(<DimTable>[<Column>]))
-VAR Top1  = TOPN(1, Items, [<Measure>], DESC)
-RETURN CONCATENATEX(Top1, <DimTable>[<Column>], ", ")
-```
-
-## Format
-Alle tal-measures: `#,0` (hele tal). Procenter: `0.0%`.
+## Formater
+Behold modellens formater; skabelonens visuals sætter selv visningsenheder (K, M) som kilderapporten.
+Rater `0.0%`, beløb med modellens valuta (`\$#,0`).

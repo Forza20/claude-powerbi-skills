@@ -1,74 +1,67 @@
-# Farver på dashboard-siden
+# Farver
 
-Alle farver sættes i `colors` i config.json (hex, `#RRGGBB`). Nøgler, der mangler, får
-standardværdien, så en ældre config uden `colors` giver præcis samme side som før.
+Hver farve på skabelonens faneblade er en farvenøgle (template.json → `colors`). `colors` i config.json
+sætter dem (HEX, `#RRGGBB`); en nøgle der udelades beholder skabelonens farve, så uden `colors` ser
+fanebladene præcis ud som kilderapporten (*Standard*). `colors` ændrer kun farveværdier: faneblade, visuals,
+placeringer, størrelser, felter, skrifttyper, talformater, tekster og bogmærker er ens for alle varianter
+(`tests/colors-only.test.js`). En ukendt nøgle eller en værdi, der ikke er `#RRGGBB`, stopper generatoren.
 
-| Nøgle | Bruges til | Standard |
+| Nøgle | Bruges til | Skabelon |
 |---|---|---|
-| `page` | sidens baggrund | `#FFFFFF` |
-| `panel` | baggrund i graf-, kort- og tabelbokse | `#FFFFFF` |
-| `border` | kant om boksene | `#C8C6C4` |
-| `ink` | titler, tal i tabeller, trend- og søjlefarve | `#252423` |
-| `sub` | undertitel, akser, datalabels | `#605E5C` |
-| `dark` | navigationsbjælke og KPI-/fremhævningsfliser | `#333333` |
+| `dark` | navigationsskinne, KPI- og fremhævningsfliser, figurer, dataserier, tooltip-baggrund | `#333333` |
+| `teal` | accent: KPI-værdier, datalabels, aktive navigationsikoner, fremhævninger | `#20E2D7` |
 | `onDark` | tekst og ikoner på `dark` | `#FFFFFF` |
-| `teal` | tallene på KPI- og fremhævningsfliserne (accent) | `#1FC8C0` |
-| `navBtn` / `navHover` | knapper i navigationsbjælken / ved hover | `#4A4A4A` / `#5C5C5C` |
-| `spark` | fladen i månedskortenes sparkline | `#E1DFDD` |
-| `bar` | databjælker i tabellen | `#C8C6C4` |
-| `grid` | gitterlinjer i trendgrafen | `#E1DFDD` |
-| `trendLine` | stiplet trendlinje | `#A19F9D` |
-| `band` | forecast-båndet | `#C8C6C4` |
-| `gradLow` / `gradHigh` | farveskala i tabellens sidste kolonne (lav → høj) | `#E36C78` / `#FDEDEF` |
-| `negative` / `axis` | negative databjælker / databjælkens akse | `#D64550` / `#999999` |
-| `white` | ældre nøgle: standard for `page`, `panel` og `onDark` | `#FFFFFF` |
+| `panel` | lyse baggrunde, den lave ende af farveskalaer | `#FFFFFF` |
+| `muted` | sekundære titler | `#666666` |
+| `soft` | baggrund på slicer-elementer | `#E6E6E6` |
+| `bar` | databjælker i tabeller | `#CCCCCC` |
+| `axis` | databjælkernes akse; temaets tekstfarve | `#252423` |
+| `bad` | fald, høj returrate (rød = dårligere) | `#DE6A73` |
+| `badDark` | returserien | `#A1343C` |
+| `gold` | anden seriefarve (donuts) | `#E1C233` |
 
-Ikke styret af `colors`: månedskortenes grøn/rød kommer fra `_cm_color`-measures (measures.md).
+Navigationsikonerne farves også om med nøglerne (de hvide = `onDark`, accentikonerne = `teal`). Temaet
+`pbip-layout-theme.json` indeholder kun farver: seriefarverne starter med `dark`, `gold`, `teal`, `bad`, så
+grafer uden egen farve følger valget. `"theme": false` udelader temaet.
 
-**Resten af rapporten:** med `colors` registrerer generatoren også et Power BI-tema
-(`pbip-layout-theme.json`) med samme farver: sidebaggrund (`page`), boksbaggrund og kant
-(`panel`, `border`), tekst (`ink`, `sub`) og dataserier (`teal`, `dark`, `gradLow` …). Så får de
-øvrige rapportsider samme udseende som dashboardet. `"theme": false` slår det fra; uden `colors`
-fjernes et tidligere tema.
+## Varianter (kun farver)
 
-## Varianter
-
-Varianterne ændrer kun farver. Placeringen er den samme (layout.md).
-
-**1. Standard** – lys side, mørke fliser. Ingen `colors` (eller tomt objekt).
+**1. Standard** – skabelonen som den er. Ingen `colors`.
 
 **2. Mørk**
 ```json
-"colors": { "page": "#1E1E24", "panel": "#2A2A33", "border": "#3A3A45", "ink": "#F2F2F5", "sub": "#A8A8B3",
-  "dark": "#111116", "onDark": "#FFFFFF", "teal": "#1FC8C0", "navBtn": "#2A2A33", "navHover": "#3A3A45",
-  "spark": "#3A3A45", "bar": "#4A4A57", "grid": "#3A3A45", "trendLine": "#8A8A96", "band": "#4A4A57",
-  "gradLow": "#E36C78", "gradHigh": "#2A2A33", "axis": "#77777F" }
+"colors": { "dark": "#111116", "muted": "#A8A8B3", "teal": "#1FC8C0", "onDark": "#F2F2F5", "panel": "#2A2A33",
+  "soft": "#3A3A45", "bar": "#4A4A57", "axis": "#F2F2F5" }
 ```
 
-**3. Brand** – standard, men med brugerens farver: `dark` = primærfarve, `teal` = accentfarve,
-`navBtn` = en lysere tone af primærfarven, `bar`/`spark` = en lys tone af accentfarven.
+**3. Brand** – brugerens farver: `dark` = primærfarve, `teal` = accentfarve, `gold` = en anden brandfarve.
+Behold `bad` rød, medmindre brandet siger andet: den betyder "dårligere".
+
+## Fra HEX-koder
+
+Kobl brugerens koder til nøglerne: den mørkeste brandfarve → `dark`, den mest synlige → `teal`, en anden
+→ `gold`; tekst og baggrund kun når brugeren beder om en mørk eller farvet side.
 
 ## Fra et screenshot
 
-`scripts/palette.ps1 -Path <billede>` (Windows PowerShell, ingen ekstra moduler) skalerer billedet
-ned, tæller farverne og foreslår nøglerne:
+`scripts/palette.ps1 -Path <billede>` (Windows PowerShell, ingen ekstra moduler) skalerer billedet ned,
+tæller farverne og foreslår hver nøgle (`suggestion`):
 
-| Nøgle | Hentes fra |
+| Nøgle | Tages fra |
 |---|---|
-| `page` | den største flade i billedet (baggrunden) |
-| `panel` | lys side: hvid; mørk side: den næststørste mørke, neutrale flade |
-| `ink` | den neutrale farve med størst kontrast til `panel`, gjort mørkere/lysere til kontrast ≥ 7 |
-| `teal` (accent) | den mest brugte mættede farve (knapper, links); ingen → Standards turkis |
-| `dark` | en mørk brandfarve (header, footer); ingen → `#333333` (lys side) eller en mørkere `page` |
-| øvrige (`sub`, `border`, `navBtn`, `spark`, `bar` …) | blandet ud fra de fire ovenfor |
+| `panel` | lyst billede: hvid; mørkt billede: det næststørste mørke, neutrale område |
+| `axis` | den neutrale farve med mest kontrast til `panel`, gjort mørkere/lysere til kontrast ≥ 7 |
+| `teal` | den mest brugte mættede farve (knapper, links); ingen → `#1FC8C0` |
+| `dark` | en mørk brandfarve (header, footer); ingen → `#333333` |
+| `gold` | en anden mættet farve med en anden farvetone (ikke rød); ingen → skabelonens |
+| `muted`, `soft`, `bar` | blandet af ovenstående; `bad`, `badDark` forbliver røde |
 
-Accentfarven skal kunne læses som tal på de mørke fliser (kontrast ≥ 4,5). Er den for mørk, gøres
-den lysere – `accentFromImage` viser originalen, `accentAdjusted` om den er ændret. `contrastOk`
-er `true`, når alle tekstpar består. Et screenshot med store fotos kan give en skæv baggrund; brug
-så et udsnit med sidens header, knapper og tekst.
+Accentfarven skal kunne læses som tal på de mørke fliser (kontrast ≥ 4,5); er den for mørk, gøres den
+lysere – `accentFromImage` viser originalen, `accentAdjusted` om den blev ændret. `contrastOk` er `true`, når
+alle tekstpar består. Et screenshot med store fotos kan skævvride baggrunden (`siteIsDark: true` for en lys
+side): brug et udsnit med header, knapper og tekst.
 
 ## Kontrast
 
-Tjek før du bygger, at tekst kan læses: kontrastforhold mindst 4,5 for `ink` og `sub` på `panel`/`page`,
-og for `teal` og `onDark` på `dark`. Er en brandfarve for lys til `dark`, så brug den som `teal`
-(accent) i stedet og behold en mørk `dark`.
+Tjek før du bygger: `onDark` og `teal` på `dark` mindst 4,5; `axis` og `muted` på `panel` mindst 4,5. Er en
+brandfarve for lys til `dark`, så brug den som `teal` og behold en mørk `dark`.

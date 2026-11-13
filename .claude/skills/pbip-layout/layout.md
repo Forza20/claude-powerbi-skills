@@ -1,52 +1,86 @@
-# Layout: Salgsoverblik (dark-tile executive)
+# Layout: AdventureWorks-rapportskabelonen
 
-Genskabt efter et AdventureWorks-forlæg. Én side, 1920 × 1080, hvid baggrund.
-Alle tal vises som **hele tal** (ingen K/M-enheder).
+Skabelonen er en rigtig rapport – `adventureworks_report.pbix`, gemt som PBIP i Power BI Desktop – skilt ad
+af `scripts/extract-template.js` i [templates/adventureworks/](templates/adventureworks/): hvert faneblad,
+visual, bogmærke og navigationsikon, med hver farve erstattet af en farvenøgle ([colors.md](colors.md)).
+`scripts/gen-report.js` bygger de faneblade, brugeren vælger, ind i en rapport og kobler dem til
+projektets egen model. Fanebladene er **1280 × 720**; tal beholder skabelonens formater og visningsenheder
+(K, M). Logoet bliver til rapportens titel eller brugerens eget logo.
 
-## Farver og typografi
-| Rolle | Farve |
-|---|---|
-| Navigationsbjælke, KPI-fliser, fremhævningsfliser | `#333333` |
-| KPI-værdier | `#1FC8C0` (turkis), Segoe UI Bold |
-| Linjer, søjler, tekst | `#252423` |
-| Sekundær tekst | `#605E5C` |
-| Kantlinjer på kort/diagrammer | `#C8C6C4`, radius 8 (KPI-fliser radius 16) |
-| Sparkline-fyld | `#E1DFDD` |
-| Tabel-gradient (lav → høj) | `#E36C78` → `#FDEDEF`; byttes om med `table.gradientHigherIsWorse: true` for rater hvor højt er dårligt (returrate, churn) |
-| Fald i månedskort | `#D64550` (via farve-measure) |
+## Faneblade (brugeren vælger altid hvilke)
 
-## Placeringer (x, y, bredde, højde)
-| # | Element | Visual | Position | Indhold |
-|---|---|---|---|---|
-| 1 | Navigationsbjælke | shape | 0, 0, 80, 1080 | mørk baggrund |
-| 2 | Tilbage-knap | actionButton | 8, 16, 64, 44 | ikon "back" |
-| 3 | Side-knapper (≤3) | actionButton | 8, nederst, 64, 44 | navigation til øvrige sider |
-| 4 | Titel | textbox | 104, 52, 256, 96 | titel + undertitel |
-| 5–8 | KPI-fliser | cardVisual | y 20, h 148; 1–4 fliser fordelt jævnt over x 376–1904 med 24 px mellemrum (4 fliser: w 364, x 376 / 764 / 1152 / 1540) | 1–4 hoved-KPI'er, label under værdi |
-| 9 | Trend | lineChart | 96, 200, 952, 548 | hovedmeasure pr. måned, kontinuerlig akse, trendlinje, forecast, zoom-slider |
-| 10–12 | Månedskort | areaChart + 2 × cardVisual | y 772, h 284, w 300; x 96 / 422 / 748 | sparkline, seneste måned (farve efter op/ned), "Forrige måned: X (±Y%)" |
-| 13 | Søjler pr. kategori | clusteredBarChart | 1072, 200, 832, 320 | measure pr. kategori, sorteret faldende, blanke skjult |
-| 14 | Top 10-tabel | tableEx | 1072, 544, 832, 340 | række + 3 measures, data bars, rød gradient på %-kolonne, TopN 10 |
-| 15–16 | Fremhævninger | textbox + cardVisual | overskrift y 904 h 32; flise y 944 h 112; w 404; x 1072 / 1500 | tekst-measures (fx top-kategori, top-kanal) |
+| Nøgle | Faneblad | Viser | Kræver i modellen |
+|---|---|---|---|
+| `exec` | Exec Dashboard | 4 KPI-fliser, omsætningstrend (trendlinje, forecast, anomalier), ordrer pr. kategori, topprodukter (ordrer, omsætning, rate), 3 månedlige KPI'er mod sidste måned, 2 "top"-fliser, et filterpanel (filterikon, bogmærker) | omsætning, ordrer, profit, en rate, et tredje antal; dato; kategori, underkategori, produkt; region/land til filterpanelet |
+| `map` | Map | ordrer pr. land på et kort, kontinent-filter | en geografikolonne (land/by) og en regionskolonne |
+| `product` | Product Detail | **drillthrough** fra et produkt: 3 målere mod targets, profittrend med prisjustering (what-if), en trend hvor brugeren vælger measure (feltparameter), en opsummeringstekst | produkt; targets (eller sidste måned + vækst); en prisjusteringsparameter; en feltparameter til produktmål |
+| `customer` | Customer Detail | kunde-KPI'er, kundetrend med valg af mål (feltparameter), ordrer pr. to kundeattributter (donuts), top 100 kunder, topkunden, en indsigtsknap (bogmærker) | kunde-id og navn, to kundeattributter, kunde-measure, omsætning pr. kunde; en feltparameter til kundemål |
+| `tooltip` | Category Tooltip | skjult tooltip-side på kategorisøjlerne: KPI-liste og ugentlige ordrer | exec-measures; en ugestart-kolonne. Uden den viser søjlerne det normale tooltip |
+| `qna` | Q&A | Q&A-visualet (spørgsmål på naturligt sprog) og ordrer pr. kategori og en attribut | kategori, en produktattribut |
+| `decomp` | Decomposition Tree | ordrer nedbrudt på kategori → underkategori → produkt, og et ordrekort | kategori, underkategori, produkt |
+| `influencers` | Key Influencers | hvad der driver en kundeattribut; hvad der driver en gennemsnitspris | en kundeattribut at forklare og attributter der forklarer den; en talkolonne pr. produkt |
 
-Positionerne ovenfor gælder med alle sektioner. Med `sections` i config (profile.md) kan
-månedskort (0–3), fremhævninger (0–2), søjlediagram og tabel fravælges; det, der er tilbage,
-fordeles over samme område: månedskort og fremhævninger fylder deres række, søjle eller tabel
-alene får hele højre kolonne, uden fremhævninger går højre kolonne ned til y 1056, uden månedskort
-går trenden ned til y 1056, og uden både søjler og tabel bliver trenden 1808 px bred.
+Navigation: den mørke skinne til venstre har en knap pr. faneblad (Exec, Map, Product, Customer). Et
+faneblad brugeren fravælger mister sin knap på alle faneblade, og knapperne under rykker op. Product
+Detail nås med sin knap eller med drillthrough på et produkt.
 
-## Pladser der skal kobles til modellen
-| Plads | Forventet indhold | Fallback hvis modellen mangler det |
+## Skabelonfelter → modellen
+
+`config.json → fields` kobler hvert felt de valgte faneblade bruger (template.json → `fields`, med de
+faneblade der bruger det) til `Tabel[Felt]` i modellen, eller `null` når modellen intet har der passer:
+`null` fjerner feltet fra et visual med flere felter (Key Influencers' forklaringsliste) og fjerner et visual
+der har brug for det (et kort uden placering). Generatoren lister hver manglende kobling og hvert udeladt
+visual. Vælg i denne rækkefølge: det forventede indhold, så reserveløsningen.
+
+### Measures
+
+| Skabelonfelt | Forventet | Reserveløsning / sådan laves den |
 |---|---|---|
-| KPI 1 | Omsætning | — (påkrævet) |
-| KPI 2 | Antal ordrer | antal rækker / transaktioner |
-| KPI 3 | Indtjening / profit | omsætning efter rabat, gns. ordreværdi |
-| KPI 4 | Rate i % (margin, returrate) | margin %, andel aktive kunder |
+| `Measure Table[Total Revenue]` | omsætning | — (påkrævet) |
+| `Measure Table[Total Orders]` | antal ordrer (distinkte ordre-id'er) | antal rækker / transaktioner |
+| `Measure Table[Total Profit]` | profit, dækningsbidrag | omsætning efter rabat |
+| `Measure Table[Return Rate]` | en rate hvor **høj er dårlig** (returer, churn, annulleringer) | margin % – ret så teksterne (`Most Returned Product Type:` …); tabellens farveskala læser "lav = rød" (skabelonen: høj = rød) |
+| `Measure Table[Total Returns]` | returer, reklamationer | kunder (så: `Monthly Returns` → `Monthly Customers`) |
+| `Measure Table[Total Customers]` | distinkte kunder med en ordre | — (kundefanebladet) |
+| `Measure Table[Previous Month Revenue/Orders/Returns]` | measuren en måned tilbage | laves – measures.md "Forrige måned" |
+| `Measure Table[Revenue Target]`, `[Order Target]`, `[Profit Target]` | targets fra modellen (en targettabel) | sidste måned × (1 + vækst) – measures.md "Targets"; spørg brugeren om væksten (skabelonen: 10 %) |
+| `Measure Table[… Target Gap]` | measure − target | laves – measures.md |
+| `Measure Table[Adjusted Profit]` | profit med prisjusteringen | laves – measures.md "Prisjustering" |
+| `Measure Table[Average Revenue per Customer]` | omsætning ÷ kunder | laves |
+| `Measure Table[Average Retail Price]` | gennemsnitspris pr. produkt | gennemsnitlig ordreværdi, gennemsnitlig listepris |
 
-KPI 1–4 er forslaget. Med en bruger til stede vælger brugeren selv 1–4 KPI'er og deres tekst
-(SKILL.md trin 4); fliserne fordeles så jævnt over rækken.
-| Trend | Omsætning pr. måned | — |
-| Månedskort 1–3 | Omsætning, ordrer, tredje nøgletal (returer/kunder) | aktive kunder |
-| Søjler | Ordrer pr. produktkategori | omsætning pr. kategori / segment |
-| Tabel | Top 10 produkter: ordrer, omsætning, %-nøgletal | top 10 kunder |
-| Fremhævning 1–2 | Kategori/segment med flest ordrer; næstvigtigste "top"-tekst | top-kanal, top-region |
+### Kolonner
+
+| Skabelonfelt | Forventet | Reserveløsning |
+|---|---|---|
+| `Calendar Lookup[Date]`, `[Year]`, `[Month]`, `[Start of Month]`, `[Start of Week]` | datotabellens dato, år, månedsnavn, månedsstart, ugestart | — (pipeline-power-bi's datotabel har dem alle) |
+| `Calendar Lookup[Date Hierarchy.Year/Start of Month/Start of Week/Date]` | skabelonens drill-niveauer → de almindelige kolonner ovenfor | — |
+| `Calendar Lookup[Start of Quarter]` | kvartalsstart (kun i filterpanelets bogmærker) | `null` |
+| `Product Categories Lookup[CategoryName]`, `Product Subcategories Lookup[SubcategoryName]`, `Product Lookup[ProductName]` | kategori, underkategori, produkt | segment / kanal / kunde for en model uden produkter |
+| `Product Lookup[ProductColor]` | en produktattribut (Q&A-tabellen) | brand, størrelse |
+| `Product Lookup[ProductCost]` | et tal pr. produkt (Key Influencers) | listepris |
+| `Territory Lookup[Country]` | en placering kortet kan finde | by; `null` udelader kortet |
+| `Territory Lookup[Continent]` | regionen over den | region, land |
+| `Customer Lookup[CustomerKey]`, `[Full Name]` | kunde-id og navn | — (kundefanebladet) |
+| `Customer Lookup[Income Level]`, `[Occupation]` | to kundeattributter (donuts) | segment, region, betalingsbetingelser |
+| `Customer Lookup[HomeOwner]` | kundeattributten Key Influencers forklarer | segment, betalingsbetingelser |
+| `Customer Lookup[AnnualIncome]`, `[EducationLevel]`, `[Is Parent?]`, `[MaritalStatus]` | attributter der kan forklare den | andre kundekolonner; `null` udelader én |
+| `Price Adjustment (%)[Price Adjustment (%)]` | what-if-parameteren | laves – measures.md "Prisjustering" |
+| `Product Metric Selection[…]`, `Customer Metric Selection[…]` (og `… Fields`) | feltparametre (brugeren vælger en measure) | laves – measures.md "Feltparametre" |
+
+Navne på siden: `labels` sætter navnet for et felt (standard: modellens navn gjort læsbart, `total_sales`
+→ `Total sales`). `texts` erstatter skabelonens titler og tekstbokse – template.json → `pages[].texts`
+lister dem præcist (`Most Returned Product Type:` med kolon). Ret en tekst, når en reserveløsning ændrer
+betydningen.
+
+## Hvad generatoren ændrer, og hvad den beholder
+
+- Kun de valgte faneblade (nye side-id'er), deres bogmærker og ikoner skrives; rapportens egne faneblade
+  bliver. Faneblade fra en tidligere kørsel (og det gamle enkeltsidede layout) erstattes.
+- Rapportens basistema bliver skabelonens (`CY23SU04`), og et farvetema (`pbip-layout-theme.json`, kun
+  farver) registreres, så standardfarverne på serier matcher skabelonen.
+- Kilderapportens data følger ikke med: valgte slicer-værdier, drillthrough-produktet, formatering bundet
+  til enkelte værdier og en tekst der citerer en kunde blev fjernet, da skabelonen blev lavet, eller ryddes
+  af generatoren.
+- Smart narrative ("Report Summary") beholder kun første sætning ("Total orders for <produkt> were
+  <ordrer>"); AI-trendsætningerne hørte til kildedataene.

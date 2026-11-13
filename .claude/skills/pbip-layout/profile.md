@@ -1,41 +1,34 @@
 # Rapportprofil
 
-En profil gemmer brugerens valg, så de ikke skal træffes igen ved hver kørsel: farver, tema,
-KPI'er, sektioner og titel. Skillen bruger profilen i stedet for at spørge (trin 3 og 4), og en
-pipeline-agent kan bruge den, selvom den ikke kan spørge. Eksempel:
-[profile.example.json](profile.example.json).
+En profil gemmer brugerens faste valg, så de ikke skal træffes igen ved hver kørsel: farver, de faneblade
+brugeren plejer at vælge, titel, logo, navne og tekster. Eksempel: [profile.example.json](profile.example.json).
 
 ```json
 {
   "name": "min-stil",
-  "colors": { "dark": "#0B3D5C", "teal": "#F2A900", "navBtn": "#1C5A80" },
+  "pages": ["exec", "map", "product", "customer", "tooltip"],
+  "colors": { "dark": "#0B3D5C", "teal": "#F2A900", "gold": "#1C5A80" },
   "theme": true,
-  "kpis": [
-    { "slot": "KPI 1", "label": "Omsætning" },
-    { "measure": "Gns. ordreværdi" },
-    { "slot": "KPI 4" }
-  ],
-  "sections": { "monthly": 2, "highlights": 1, "bar": true, "table": true },
   "title": "Salgsoverblik",
-  "subtitle": "Seneste hele måned"
+  "subtitle": "Seneste hele måned",
+  "logo": "C:\\brand\\logo.png",
+  "targetGrowth": 0.1,
+  "labels": { "Measure Table[Total Profit]": "Dækningsbidrag" },
+  "texts": { "Monthly Returns": "Monthly Customers" }
 }
 ```
 
-| Felt | Betydning | Udeladt |
+| Felt | Betydning | Hvis udeladt |
 |---|---|---|
-| `colors` | farver, nøgler som i [colors.md](colors.md) | *Standard* |
-| `theme` | samme farver på alle rapportsider (tema i `StaticResources/RegisteredResources`) | `true`, når `colors` er sat |
-| `kpis` | 1–4 KPI'er i rækkefølge. `slot` = forslaget fra layout.md (`KPI 1`–`KPI 4`); `measure` = navnet på et measure i modellen (store/små bogstaver er ligegyldige); `label` = tekst under tallet | forslaget KPI 1–4 |
-| `sections.monthly` | antal månedskort, 0–3 | 3 |
-| `sections.highlights` | antal fremhævningsfliser, 0–2 | 2 |
-| `sections.bar` / `sections.table` | søjlediagram / top-tabel med eller ej | `true` |
-| `title` / `subtitle` | sidens titel og undertitel | layoutets |
+| `pages` | de faneblade brugeren plejer at vælge (nøgler i layout.md). **Kun et forslag**: brugeren spørges stadig hver gang (SKILL.md trin 3); i pipeline-tilstand spørger orkestratoren før kørslen | alle faneblade forvalgt |
+| `colors` | farvenøgler ([colors.md](colors.md)) | skabelonens farver (*Standard*) |
+| `theme` | `false` = registrér ikke farvetemaet | registreres |
+| `title` / `subtitle` | øverst til venstre på Exec Dashboard (hvor kilderapporten har sit logo) | "Salgsoverblik" |
+| `logo` | sti til brugerens eget logo (.png/.jpg) – vises i stedet for titlen | titlen |
+| `targetGrowth` | vækst til targets, når modellen ingen har (measures.md "Targets") | spørges; skabelonen 0,1 |
+| `labels`, `texts` | viste navne for felter; erstattede titler og tekstbokse (layout.md) | modellens navne; skabelonens tekster |
 
-Sådan bruges felterne:
-- `colors`, `theme`, `sections`, `title` og `subtitle` kopieres uændret til config.json.
-- `kpis` oversættes til config-formatet: `slot` → det measure, kortlægningen (trin 4) fandt til pladsen;
-  `measure` → `Tabel[Measure]` fra modellen. Findes et navngivet measure ikke, så brug forslaget for
-  samme nummer, og skriv det under "Åbne punkter" (pipeline) eller spørg (med bruger).
-- Profilen ændrer aldrig placeringen af det, der vises – kun hvad der vises og i hvilke farver.
-- Det, der udelades, fordeles: færre KPI'er, månedskort eller fremhævninger fylder rækken ud;
-  uden søjlediagram eller tabel får den anden hele højre kolonne; uden begge bliver trenden bred.
+Sådan bruges den:
+- `colors`, `theme`, `title`, `subtitle`, `logo`, `labels` og `texts` kopieres til config.json.
+- `pages` forvælger svarene i spørgsmålet om faneblade; det brugeren krydser af, bliver `config.pages`.
+- Profilen ændrer aldrig layoutet på et faneblad – kun hvilke faneblade der bygges, deres farver og tekster.
