@@ -73,12 +73,26 @@ Arbejd med brugeren på brugerens sprog.
    (en wireframe af de valgte faneblade: placeringer, størrelser, baggrundsfarver, titler og felter; Power
    BI tegner selve visuals). Vis en tabel: faneblad → skabelonfelt → modelfelt → værdi, nye measures, og hvad
    der udelades (`dropped`). Udgiv previewet som privat side, når Artifact-værktøjet findes, ellers giv
-   stien. Spørg med AskUserQuestion om koblingen og farverne; byg først efter godkendelse.
-   *I pipeline-tilstand:* intet preview, intet spørgsmål – tabellen skrives i `layout-mapping.md`.
+   stien. Spørg med AskUserQuestion om koblingen og farverne, **og hver beslutning** (nedenfor); byg først
+   efter godkendelse. *I pipeline-tilstand:* intet preview, intet spørgsmål – tabellen skrives i
+   `layout-mapping.md`, beslutningerne i `layout-decisions.json`.
+
+   **Beslutninger – brugeren bestemmer, med din anbefaling.** Det, dataene lader stå åbent, vælges ikke i
+   stilhed og noteres ikke bare: det er en beslutning med din anbefaling og alternativerne. Typisk:
+   - en reserveløsning der ændrer betydningen (margin % hvor skabelonen har en returrate): farveskalaens
+     retning (`reverseScales`), teksterne (`texts`) eller en anden measure;
+   - targets: modellens egne, eller sidste måned + en vækst (5 / 10 / 15 %);
+   - et skabelonfelt uden match (`null`): udelad feltet eller visualet, eller brug et navngivet alternativ;
+   - et faneblad modellen ikke kan fylde godt (et kort med kun byer, Key Influencers med få attributter);
+   - en synlig kolonne med persondata på et faneblad (topkunder).
+   Spørg med AskUserQuestion, højst 4 pr. kald: pr. beslutning ét spørgsmål der står alene (hvad dataene
+   viser, hvorfor det betyder noget), anbefalingen først med "(Recommended)" og begrundelsen i beskrivelsen,
+   derefter 1–3 alternativer med deres virkning; brugeren kan altid skrive sit eget ("Other"). Indarbejd
+   svarene i config.json (eller measures), før der bygges.
 
 8. **config.json** (scratchpad) som [config.example.json](config.example.json): `template`, `pages`,
-   `fields` (`Tabel[Felt]` eller `null`), `labels`, `texts`, `title`/`subtitle` eller `logo`, `colors`,
-   `theme`. Gem en kopi som `<projektmappe>/docs/layout-config.json` (opret `docs/`), så pbip-catalog kan
+   `fields` (`Tabel[Felt]` eller `null`), `labels`, `texts`, `reverseScales` (skabelonfelter hvis
+   farveskalaer skal gå den anden vej), `title`/`subtitle` eller `logo`, `colors`, `theme`. Gem en kopi som `<projektmappe>/docs/layout-config.json` (opret `docs/`), så pbip-catalog kan
    mærke felterne med deres faneblad.
 
 9. **Generér og tjek.**
@@ -126,11 +140,20 @@ opgaven siger "pipeline-tilstand":
   (eller opgaven). **Ingen faneblade angivet: vælg dem ikke selv** – afslut med status `waiting_for_user`
   og årsagen "faneblade ikke valgt"; orkestratoren spørger.
 - **Profil:** `run.json` → `profile` giver farver, titel, labels, tekster og target-vækst. Ellers
-  *Standard* og 10 % vækst (skriv det under "Åbne punkter").
-- **Ingen AskUserQuestion** nogen steder; al tvivl skrives under "Åbne punkter" i `layout-mapping.md`
-  sammen med det valg, der blev truffet.
+  *Standard*; target-væksten er en beslutning (nedenfor).
+- **Ingen AskUserQuestion** – men heller ingen stille valg. Hver beslutning (trin 7) skrives i
+  `layout-decisions.json` i kørselsmappen, og **anbefalingen anvendes**, så kørslen bliver færdig:
+  ```json
+  [ { "id": "return-rate-scale", "question": "Dataene har ingen returer; margin % står hvor skabelonen viser returraten. Hvilken vej skal farveskalaen gå?",
+      "why": "I skabelonen er høj = rød (dårlig); for margin er høj godt.",
+      "options": [ { "label": "Høj margin = lys, lav = rød", "recommended": true, "effect": "reverseScales: [\"Measure Table[Return Rate]\"]" },
+                   { "label": "Behold skabelonens retning", "effect": "ingen ændring" } ],
+      "applied": "Høj margin = lys, lav = rød" } ]
+  ```
+  Orkestratoren (`/messy-pipeline`, pipeline-power-bi's overdragelse) stiller brugeren spørgsmålene med
+  AskUserQuestion; et andet svar end det anvendte ændrer config.json, og `gen-report.js` køres igen.
 - **Kobling:** skriv `layout-mapping.md` i kørselsmappen: faneblad → skabelonfelt → modelfelt → værdi →
-  reserveløsning; nye measures og parametre; `dropped`; åbne punkter. Første match i layout.md vinder; en
+  reserveløsning; nye measures og parametre; `dropped`; beslutningerne og hvad der blev anvendt. Første match i layout.md vinder; en
   reserveløsning kun når modellen mangler data.
 - **Desktop (trin 10):** tjek at Desktop er lukket, før der skrives. Er Desktop åben med ugemte ændringer,
   eller fejler åbning/screenshot (hukommelse, login): prøv ikke igen, skriv ikke videre, afslut med
