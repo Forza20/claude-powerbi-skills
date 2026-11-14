@@ -20,8 +20,9 @@ brugeren plejer at vælge, titel, logo, navne og tekster. Eksempel: [profile.exa
 
 | Felt | Betydning | Hvis udeladt |
 |---|---|---|
-| `pages` | de faneblade brugeren plejer at vælge (nøgler i layout.md). **Kun et forslag**: brugeren spørges stadig hver gang (SKILL.md trin 3); i pipeline-tilstand spørger orkestratoren før kørslen | alle faneblade forvalgt |
-| `colors` | farvenøgler ([colors.md](colors.md)) | skabelonens farver (*Standard*) |
+| `template` | `adventureworks` eller `business` (layout-business.md) – kun et forslag; skabelonen spørges stadig | spørges |
+| `pages` | de faneblade brugeren plejer at vælge (nøgler i layout.md / layout-business.md). **Kun et forslag**: brugeren spørges stadig hver gang (SKILL.md trin 3); i pipeline-tilstand spørger orkestratoren før kørslen | alle faneblade forvalgt |
+| `colors` | farvenøgler ([colors.md](colors.md); business: layout-business.md → Farver) | skabelonens farver (*Standard*) |
 | `theme` | `false` = registrér ikke farvetemaet | registreres |
 | `title` / `subtitle` | øverst til venstre på Exec Dashboard (hvor kilderapporten har sit logo) | "Salgsoverblik" |
 | `logo` | sti til brugerens eget logo (.png/.jpg) – vises i stedet for titlen | titlen |

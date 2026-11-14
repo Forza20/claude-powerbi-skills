@@ -1,14 +1,19 @@
 ---
 name: pbip-layout
-description: Bygger AdventureWorks-rapportskabelonen (Exec Dashboard, Map, Product Detail, Customer Detail, Category Tooltip, Q&A, Decomposition Tree, Key Influencers – taget fra adventureworks_report.pbix med farver, navigation, bogmærker og layout) ind i et Power BI PBIP-projekt og kobler hvert faneblad til projektets egne measures og kolonner. Brugeren vælger altid, hvilke faneblade der skal med; farver kan komme fra HEX-koder eller et screenshot og ændrer kun farverne. Trigger ALTID når brugeren skriver `anvend "layout.md"` (også uden anførselstegn, fx "anvend layout.md") sammen med en PBIP-fil/-mappe eller et åbent PBIP-projekt i Power BI Desktop, og når en pipeline-agent (fx `layout-applier`) bliver bedt om at anvende layoutet – se "Pipeline-tilstand".
+description: Bygger en af to rapportskabeloner ind i et Power BI PBIP-projekt – AdventureWorks (Exec Dashboard, Map, Product Detail, Customer Detail, Category Tooltip, Q&A, Decomposition Tree, Key Influencers – taget fra adventureworks_report.pbix med farver, navigation, bogmærker og layout) eller Business (Home + modulerne Marketing, Sales og Finance med hver sit overblik og drillthrough; skabelonens measures laves ud fra modellens egne kolonner) og kobler hvert faneblad til projektets egne measures og kolonner. Brugeren vælger altid, hvilke faneblade der skal med; farver kan komme fra HEX-koder eller et screenshot og ændrer kun farverne. Trigger ALTID når brugeren skriver `anvend "layout.md"` (også uden anførselstegn, fx "anvend layout.md") sammen med en PBIP-fil/-mappe eller et åbent PBIP-projekt i Power BI Desktop, og når en pipeline-agent (fx `layout-applier`) bliver bedt om at anvende layoutet – se "Pipeline-tilstand".
 disable-model-invocation: true
 ---
 
 # Anvend rapportskabelonen på et PBIP-projekt
 
-Skabelonen er en rigtig rapport skilt ad i [templates/adventureworks/](templates/adventureworks/)
-(faneblade, visuals, bogmærker, ikoner; hver farve er en farvenøgle). [layout.md](layout.md) beskriver
-fanebladene og hvert skabelonfelt med hvad det skal være og en reserveløsning.
+Der er to skabeloner, begge rigtige rapporter skilt ad i `templates/<nøgle>/` (faneblade, visuals,
+bogmærker, ikoner; hver farve er en farvenøgle):
+- **`adventureworks`** – salgsrapporten. [layout.md](layout.md) beskriver fanebladene og hvert skabelonfelt
+  med hvad det skal være og en reserveløsning.
+- **`business`** – Home + modulerne Marketing, Sales, Finance (overblik + drillthrough hver).
+  [layout-business.md](layout-business.md): modulerne, datakontrakten, farverne. Her kobles *kolonner* til en
+  datakontrakt, og [scripts/gen-measures.js](scripts/gen-measures.js) laver skabelonens measures og felterne.
+
 [scripts/gen-report.js](scripts/gen-report.js) bygger de valgte faneblade fra en config
 ([config.example.json](config.example.json)). Measures og parametre: [measures.md](measures.md). Farver:
 [colors.md](colors.md). Faste valg: en profil ([profile.md](profile.md)).
@@ -31,7 +36,16 @@ Arbejd med brugeren på brugerens sprog.
    measures og relationer (uden MCP: læs TMDL'en, "Uden powerbi-modeling-mcp"). Læs brugerens profil, hvis
    der er en, og sig hvilke valg der kommer fra den.
 
-3. **Fanebladene – spørg altid, også med en profil.** AskUserQuestion med to multiSelect-spørgsmål; hver
+3. **Skabelon og faneblade – spørg altid, også med en profil.** Først skabelonen (én AskUserQuestion), når
+   den ikke er givet (`config.template`, profilens `template`, `run.json → layout_template`):
+   "AdventureWorks – salgsrapport (ordrer, produkter, kunder, kort)" · "Business – Marketing, Sales og Finance
+   (Home + moduler)". Anbefal ud fra modellen: leads/kampagner, opportunities/pipeline eller
+   hovedbog/kontotyper → Business; ordrelinjer med produkter og kunder → AdventureWorks.
+   **Business:** ét multiSelect "Hvilke moduler og faneblade skal rapporten have?" – Home · Marketing
+   (+ Campaign Detail) · Sales (+ Opportunity Detail) · Finance (+ P&L Detail); beskrivelsen siger, hvad
+   modellen har eller mangler til modulet (layout-business.md → Påkrævet pr. modul). Et modul giver begge
+   dets faneblade; spørg kun om drillthrough-siden særskilt, hvis modellen ikke kan fylde den.
+   **AdventureWorks:** AskUserQuestion med to multiSelect-spørgsmål; hver
    mulighed = et faneblad, beskrivelsen = hvad det viser, og hvad modellen har eller mangler til det
    (layout.md → Faneblade):
    - "Hvilke dashboard-faneblade skal rapporten have?" – Exec Dashboard, Map, Product Detail, Customer Detail
@@ -44,7 +58,8 @@ Arbejd med brugeren på brugerens sprog.
    - **Et farvevalg ændrer kun farver.** HEX-koder eller et screenshot udfylder kun `colors` (og `theme`) i
      config.json – faneblade, felter, tekster, skrifttyper, talformater og placeringer er præcis som med
      *Standard*. Generatoren afviser ukendte nøgler og alt, der ikke er `#RRGGBB`;
-     `node "<skill-mappe>/tests/colors-only.test.js"` beviser det – kør den efter ændringer i `gen-report.js`.
+     `node "<skill-mappe>/tests/colors-only.test.js"` og `tests/business.test.js` beviser det – kør begge efter
+   ændringer i `gen-report.js`. Business-nøglerne: layout-business.md → Farver (good/bad/neutral er faste).
    - **Screenshot:** mål farverne i stedet for at gætte:
      `powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-mappe>/scripts/palette.ps1" -Path "<billede>"`
      → `suggestion` har hver farvenøgle; nævn `accentAdjusted`. Stien til et indsat billede står i beskeden
@@ -53,7 +68,12 @@ Arbejd med brugeren på brugerens sprog.
    - Højst 2 varianter (fx *Standard* og *Brand*); de adskiller sig kun i farver.
    *I pipeline-tilstand:* profilens farver, ellers *Standard*.
 
-5. **Kobl skabelonfelterne.** Start med forslaget:
+5. **Kobl skabelonfelterne.** *Business:* kobl datakontrakten i stedet og lad `gen-measures.js` lave
+   measures og felter (layout-business.md → Datakontrakt → measures): `suggest-fields.js` foreslår
+   `config.contract`, du tjekker betydning og værdier (`config.values`), og
+   `node "<skill-mappe>/scripts/gen-measures.js" "<config.json>" --write-config --spec … | --tmdl …` skriver
+   measures og `config.fields`. Hver `skipped` measure og hver `derive`-kolonne er en beslutning (trin 7).
+   Spring trin 6 over. *AdventureWorks:* start med forslaget:
    `node "<skill-mappe>/scripts/suggest-fields.js" "<.SemanticModel-mappe>" --config "<config.json>"`
    (config.json med `template` og `pages`; det udfylder `fields` ud fra navne i
    `templates/<nøgle>/field-hints.json` og skriver `how` pr. felt – navn, reserveløsning, `make: <opskrift>`
@@ -93,7 +113,8 @@ Arbejd med brugeren på brugerens sprog.
    derefter 1–3 alternativer med deres virkning; brugeren kan altid skrive sit eget ("Other"). Indarbejd
    svarene i config.json (eller measures), før der bygges.
 
-8. **config.json** (scratchpad) som [config.example.json](config.example.json): `template`, `pages`,
+8. **config.json** (scratchpad) som [config.example.json](config.example.json) (Business:
+   [config.example-business.json](config.example-business.json) – desuden `contract`, `values`, `currencyFormat`): `template`, `pages`,
    `fields` (`Tabel[Felt]` eller `null`), `labels`, `texts`, `reverseScales` (skabelonfelter hvis
    farveskalaer skal gå den anden vej), `title`/`subtitle` eller `logo`, `colors`, `theme`,
    `completeMonth` (`Tabel[Kolonne]`, en sand/falsk kolonne i datotabellen, der er sand for hele
@@ -147,6 +168,7 @@ Arbejd med brugeren på brugerens sprog.
 Når en subagent kører skillen (`layout-applier` i `/messy-pipeline`, en pipeline-power-bi-kørsel), eller
 opgaven siger "pipeline-tilstand":
 
+- **Skabelon:** `run.json` → `layout_template` (`adventureworks` hvis den mangler).
 - **Faneblade:** orkestratoren spurgte brugeren før kørslen – fanebladene står i `run.json` → `layout_pages`
   (eller opgaven). **Ingen faneblade angivet: vælg dem ikke selv** – afslut med status `waiting_for_user`
   og årsagen "faneblade ikke valgt"; orkestratoren spørger.
@@ -185,7 +207,10 @@ opgaven siger "pipeline-tilstand":
 ## Lav en skabelon fra en anden rapport
 
 `node "<skill-mappe>/scripts/extract-template.js" "<Navn.Report>" "<skill-mappe>/templates/<nøgle>"`
-gør en rapport gemt som PBIP (PBIR) til en skabelon. Den stopper ved en farve, den ikke har en nøgle til
-(tilføj den i `classify()`), fjerner formatering bundet til enkelte dataværdier og logoet, og skriver
+gør en rapport gemt som PBIP (PBIR) til en skabelon. `--keys <sæt>` vælger farvenøgler, fanebladsnøgler,
+temaets seriefarver og rettelser til kilderapporten (`KEYSETS` i scriptet; `business` for Business-skabelonen).
+Den stopper ved en farve, den ikke har en nøgle til (tilføj den i sættets `classify()`; `'fixed'` = farven
+bliver som den er), beholder de håndskrevne filer (`field-hints.json`, `modules.json`, `contract.json`,
+`measures/`), fjerner formatering bundet til enkelte dataværdier og logoet, og skriver
 template.json (faneblade, felter, tekster, farver, ikoner). Beskriv derefter fanebladene og felterne i
 layout.md og kør testen.

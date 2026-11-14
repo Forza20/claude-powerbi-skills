@@ -6,6 +6,7 @@
 //   node suggest-fields.js "<Name.SemanticModel>" [--template adventureworks] [--pages exec,map,…] [--config <config.json>]
 //
 // --config: merge into that config (its own non-empty mappings win) and write it back.
+// A template with a data contract (business): proposes config.contract instead (contract.json → names).
 // Prints JSON { fields, how: { field: "name" | "fallback" | "make: <recipe>" | "none" }, decisions: [...], make: [...] }.
 'use strict';
 const fs = require('fs');
@@ -54,6 +55,36 @@ function find(hint, kind, patterns) {
     }
   }
   return null;
+}
+
+// a template with a data contract (templates/<key>/contract.json, e.g. business): the model's columns are
+// mapped to the contract (config.contract); gen-measures.js then makes the measures and config.fields
+const CONTRACT = path.join(TPL, 'contract.json');
+if (fs.existsSync(CONTRACT)) {
+  const K = JSON.parse(fs.readFileSync(CONTRACT, 'utf8')).columns;
+  const MODS = fs.existsSync(path.join(TPL, 'modules.json')) ? JSON.parse(fs.readFileSync(path.join(TPL, 'modules.json'), 'utf8')) : { modules: {} };
+  const mods = new Set(Object.entries(MODS.modules).filter(([, d]) => d.pages.some((p) => pages.includes(p))).map(([m]) => m));
+  const contract = {}; const chow = {}; const missing = [];
+  for (const [k, c] of Object.entries(K)) {
+    if (c.module !== 'shared' && !mods.has(c.module)) continue;
+    if (c.make) { chow[k] = 'made by gen-measures.js'; continue; }
+    const own = cfg && cfg.contract && cfg.contract[k];
+    if (own) { contract[k] = own; chow[k] = 'config'; continue; }
+    const r = find(c, 'column', c.names);
+    contract[k] = r; chow[k] = r ? 'name' : c.derive ? `none – derive: ${c.derive}` : 'none';
+    if (!r && c.required) missing.push(k);
+  }
+  const out = { template: key, pages, modules: [...mods], contract, how: chow, requiredMissing: missing,
+    next: [
+      missing.length ? `Required and not found: ${missing.join(', ')} – map them, or leave the module out.` : null,
+      'Check each mapping (meaning, values: contract.json → values; config.values when the model spells them differently), then: node gen-measures.js <config.json> --write-config [--spec choices.json | --tmdl Name.SemanticModel].',
+    ].filter(Boolean) };
+  if (cfgPath) {
+    fs.writeFileSync(cfgPath, JSON.stringify({ ...(cfg || {}), template: key, pages, contract: { ...((cfg && cfg.contract) || {}), ...contract } }, null, 1) + '\n');
+    out.written = cfgPath;
+  }
+  console.log(JSON.stringify(out, null, 1));
+  process.exit(0);
 }
 
 const fields = {}; const how = {}; const decisions = []; const make = new Set();
