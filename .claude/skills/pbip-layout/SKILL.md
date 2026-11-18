@@ -38,9 +38,11 @@ Arbejd med brugeren på brugerens sprog.
 
 3. **Skabelon og faneblade – spørg altid, også med en profil.** Først skabelonen (én AskUserQuestion), når
    den ikke er givet (`config.template`, profilens `template`, `run.json → layout_template`):
-   "AdventureWorks – salgsrapport (ordrer, produkter, kunder, kort)" · "Business – Marketing, Sales og Finance
+   "Generic layout – salgsrapport (ordrer, produkter, kunder, kort)" · "Business – Marketing, Sales og Finance
    (Home + moduler)". Anbefal ud fra modellen: leads/kampagner, opportunities/pipeline eller
-   hovedbog/kontotyper → Business; ordrelinjer med produkter og kunder → AdventureWorks.
+   hovedbog/kontotyper → Business; ordrelinjer med produkter og kunder → Generic layout.
+   I alle spørgsmål, previews og opsummeringer til brugeren hedder AdventureWorks-skabelonen
+   **Generic layout** og dens egne farver **Generic colors** – nøglen er stadig `adventureworks`.
    **Business:** ét multiSelect "Hvilke moduler og faneblade skal rapporten have?" – Home · Marketing
    (+ Campaign Detail) · Sales (+ Opportunity Detail) · Finance (+ P&L Detail); beskrivelsen siger, hvad
    modellen har eller mangler til modulet (layout-business.md → Påkrævet pr. modul). Et modul giver begge
@@ -54,7 +56,8 @@ Arbejd med brugeren på brugerens sprog.
    (et kort uden en placeringskolonne). Svaret er `config.pages`. Intet valgt: stop og spørg igen.
 
 4. **Farver (kun med en bruger til stede).** Spørg, om brugeren har farvekoder (HEX, en `.md`-fil) eller
-   et screenshot af en hjemmeside eller et brand. Ingen af delene: *Standard* – skabelonens egne farver.
+   et screenshot af en hjemmeside eller et brand. Ingen af delene: *Standard* – skabelonens egne farver, vist
+   for brugeren som "Generic colors".
    - **Et farvevalg ændrer kun farver.** HEX-koder eller et screenshot udfylder kun `colors` (og `theme`) i
      config.json – faneblade, felter, tekster, skrifttyper, talformater og placeringer er præcis som med
      *Standard*. Generatoren afviser ukendte nøgler og alt, der ikke er `#RRGGBB`;
