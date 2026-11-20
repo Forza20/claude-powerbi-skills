@@ -1,7 +1,6 @@
 ---
 name: pbip-catalog
 description: Laver data catalog (Excel), data lineage (Markdown + Mermaid) og en datamodel til dbdiagram.io (DBML) for et Power BI PBIP-projekt, typisk lige efter pbip-layout. Felter på dashboard-siden tagges med deres plads (KPI 1, Månedskort 2 …), lineage går fra datakilde gennem Power Query-trin og DAX til visual, og godkendte beskrivelser kan skrives tilbage som `///` i TMDL. Trigger ALTID når brugeren skriver "Katalog:" efterfulgt af et projektnavn, når pbip-layout er færdig og brugeren siger ja til katalog, eller når brugeren beder om data catalog, datakatalog, lineage, dbdiagram, DBML eller dbdocs for et PBIP-projekt.
-disable-model-invocation: true
 ---
 
 # PBIP Catalog – data catalog, lineage og dbdiagram.io
@@ -24,6 +23,10 @@ Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/p
 | `lineage.html` | **Tilvalg** (`--html`): lineage på tabelniveau som én HTML-side. Kolonnerne er lagene filer → bronze/silver/gold → Power Query → Power BI-tabeller → rapportsider. Tabeller, der ikke bruges videre, har stiplet rød kant, og et klik fremhæver hele vejen. Se [format.md](format.md). |
 
 ## Forudsætninger
+- **Skill'en `pbip-governance` skal være installeret** (den indeholder `scripts/parse_pbip.py`, som denne
+  skill ikke kan køre uden). Uden den stopper `build_catalog.py` med "Fandt ikke
+  pbip-governance/scripts/parse_pbip.py": installér den ved siden af denne skill, eller angiv `--parser` /
+  `PBIP_PARSER`. `pbip-layout` er valgfri (dens `docs/layout-config.json` tilføjer kun dashboard-tags).
 - Python 3 med `openpyxl`. Kommandoerne nedenfor skriver `python3`. På Windows hedder den ofte
   `python` eller `py`, og `python3` åbner måske Microsoft Store. Tjek én gang med `python --version`, og
   brug den kommando, der virker, i hele kørslen.
