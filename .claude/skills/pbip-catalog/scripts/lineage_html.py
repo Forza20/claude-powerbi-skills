@@ -3,7 +3,7 @@ lineage_html.py - table-level lineage as one self-contained HTML page (docs/line
 
 Columns are layers, left to right: files → database schemas (bronze, silver, gold …) → Power Query
 queries → Power BI tables → report pages. A schema whose tables feed each other is split into steps
-("silver · trin 2"). Nodes in a column are grouped by the node they feed. Tables that feed nothing
+("silver · step 2"). Nodes in a column are grouped by the node they feed. Tables that feed nothing
 further are drawn with a dashed red border. Click a node to highlight its whole path.
 
 Called from build_catalog.py with --html. The page needs no server and no network.
@@ -22,9 +22,9 @@ LAYER_WORDS = [(('gold', 'mart'), 5, 'gold'), (('silver',), 4, 'silver'), (('stg
                (('bronze',), 2, 'bronze'), (('raw', 'landing'), 1, 'raw')]
 COLORS = {'file': '#9aa0b4', 'raw': '#9aa0b4', 'bronze': '#d08f5e', 'stage': '#b9a6e8', 'silver': '#a99cf5',
           'gold': '#e8c547', 'db': '#6fb3d9', 'pq': '#7fc8a9', 'model': '#4fd1c5', 'page': '#f08fb0'}
-KIND_TEXT = {'file': 'Fil', 'raw': 'Database', 'bronze': 'Bronze', 'stage': 'Staging', 'silver': 'Silver',
-             'gold': 'Gold', 'db': 'Database', 'pq': 'Power Query', 'model': 'Power BI-tabel',
-             'page': 'Rapportside'}
+KIND_TEXT = {'file': 'File', 'raw': 'Database', 'bronze': 'Bronze', 'stage': 'Staging', 'silver': 'Silver',
+             'gold': 'Gold', 'db': 'Database', 'pq': 'Power Query', 'model': 'Power BI table',
+             'page': 'Report page'}
 
 
 def _norm(name):
@@ -96,7 +96,7 @@ def build_graph(parsed, cat, sql, helpers):
     g = Graph()
     tables = {t['name']: t for t in model['tables']}
     queries = {e['name']: e for e in model.get('expressions', []) if e['kind'] == 'query'}
-    trow = {r['Tabel']: r for r in cat['tables']}
+    trow = {r['Table']: r for r in cat['tables']}
     steps = {(e['name'], s['name']): s.get('expression', '')
              for e in model.get('expressions', []) for s in e.get('steps', [])}
     for t in model['tables']:
@@ -153,7 +153,7 @@ def build_graph(parsed, cat, sql, helpers):
     for t in model['tables']:
         row = trow.get(t['name'], {})
         tid = g.node('t:' + t['name'], t['name'], 'model', RANK_MODEL, 'model',
-                     desc=row.get('Beskrivelse', ''), ntype=row.get('Type', ''))
+                     desc=row.get('Description', ''), ntype=row.get('Type', ''))
         part = next(iter(t['partitions']), {})
         refs = part.get('references', [])
         via_query = set()
@@ -223,24 +223,24 @@ def layout_columns(g, files):
         rank, group, d = key
         kind = cols[key][0]['kind']
         if group == 'files':
-            title = next(iter(files)) if len(files) == 1 and kind == 'file' else 'Filer'
+            title = next(iter(files)) if len(files) == 1 and kind == 'file' else 'Files'
             if len(files) == 1:
                 for n in cols[key]:
                     if ' › ' in n['title']:
                         n['label'] = n['title'].split(' › ', 1)[1]
-            unit = 'filer' if all(' › ' not in n['title'] for n in cols[key]) else 'kilder'
+            unit = 'files' if all(' › ' not in n['title'] for n in cols[key]) else 'sources'
         elif group == 'pq':
             title, unit = 'Power Query', 'queries'
         elif group == 'model':
-            title, unit = 'Power BI-model', 'tabeller'
+            title, unit = 'Power BI model', 'tables'
         elif group == 'pages':
-            title, unit = 'Rapport', 'sider'
+            title, unit = 'Report', 'pages'
         elif group == 'db:(temp)':
-            title, unit = 'temp-tabeller', 'tabeller'
+            title, unit = 'temp tables', 'tables'
         else:
-            title, unit = group[3:] or 'database', 'tabeller'
+            title, unit = group[3:] or 'database', 'tables'
         if d:
-            title += f' · trin {d + 1}'
+            title += f' · step {d + 1}'
         out.append({'id': i, 'title': title, 'unit': unit, 'count': len(cols[key])})
         for n in cols[key]:
             n['col'] = i
@@ -260,8 +260,8 @@ def write_lineage_html(parsed, cat, sql, path, project, helpers):
             'id': n['id'], 'label': n['label'], 'col': n['col'], 'kind': KIND_TEXT[n['kind']],
             'color': COLORS[n['kind']], 'title': n['title'], 'desc': n['desc'], 'type': n['type'],
             'unused': unused,
-            'unusedText': ('Bruges ikke på en rapportside' if n['kind'] == 'model'
-                           else 'Ingen læst SQL eller Power Query bruger den videre') if unused else '',
+            'unusedText': ('Not used on any report page' if n['kind'] == 'model'
+                           else 'No SQL or Power Query that was read uses it further') if unused else '',
         })
     data = {
         'project': project,

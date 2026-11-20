@@ -359,7 +359,7 @@ for (const key of chosen) {
       } else {
         const lit = (x) => ({ expr: { Literal: { Value: x } } });
         v.json = { $schema: v.json.$schema, name: v.json.name, position: v.json.position, visual: { visualType: 'textbox', objects: { general: [{ properties: { paragraphs: [
-          { textRuns: [{ value: cfg.title || 'Salgsoverblik', textStyle: { fontFamily: 'Segoe UI Bold', fontSize: '20pt', color: '{{dark}}' } }] },
+          { textRuns: [{ value: cfg.title || 'Sales overview', textStyle: { fontFamily: 'Segoe UI Bold', fontSize: '20pt', color: '{{dark}}' } }] },
           ...(cfg.subtitle ? [{ textRuns: [{ value: cfg.subtitle, textStyle: { fontFamily: 'Segoe UI', fontSize: '11pt', color: '{{muted}}' } }] }] : []),
         ] } }] }, visualContainerObjects: { background: [{ properties: { show: lit('false') } }] } } };
       }

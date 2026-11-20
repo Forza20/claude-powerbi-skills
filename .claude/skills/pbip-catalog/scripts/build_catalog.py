@@ -9,7 +9,7 @@ Usage:
                              [--sql DIR_OR_FILE ...] [--html]
 
 Writes to --out (default <pbip-folder>/docs):
-    catalog.xlsx               Excel catalog (edit Beskrivelse/Ejer/Følsomhed/Opstrøms kilde/Status)
+    catalog.xlsx               Excel catalog (edit Description/Owner/Sensitivity/Upstream source/Status)
     lineage.md                 Mermaid lineage: overview, per dashboard slot, per column
     model.dbml                 DBML for dbdiagram.io / dbdocs.io
     catalog.json               Machine-readable catalog (pipeline handoff / diff)
@@ -17,9 +17,9 @@ Writes to --out (default <pbip-folder>/docs):
     lineage.html               (--html) table-level lineage page: files → layers → model → pages
 
 Description precedence: earlier Excel edits > TMDL `///` > AI draft (--ai-descriptions).
-Opstrøms kilde is filled automatically from the Power Query origin and, with --sql, followed
+Upstream source is filled automatically from the Power Query origin and, with --sql, followed
 through CREATE VIEW / INSERT INTO ... SELECT in the given SQL files. Text you typed yourself
-is never replaced (the last auto value is kept in "Opstrøms kilde (auto)").
+is never replaced (the last auto value is kept in "Upstream source (auto)").
 """
 
 import argparse
@@ -33,8 +33,8 @@ import sys
 from pathlib import Path
 
 LAYOUT_PAGE_ID = '8d1e4c7a2b5f9e3d6c10'   # fixed page id written by pbip-layout
-EDITABLE = ['Beskrivelse', 'Ejer', 'Følsomhed', 'Opstrøms kilde', 'Status']
-STATUSES = ['Mangler', 'Bør oversættes', 'AI-forslag', 'Fra model', 'Redigeret', 'Godkendt']
+EDITABLE = ['Description', 'Owner', 'Sensitivity', 'Upstream source', 'Status']
+STATUSES = ['Missing', 'Translate', 'AI suggestion', 'From model', 'Edited', 'Approved']
 # function words only; words both languages share ('for', 'i', 'a') are left out
 EN_WORDS = {'the', 'of', 'and', 'with', 'only', 'from', 'is', 'are', 'each', 'which', 'that', 'this',
             'when', 'to', 'an', 'not', 'or', 'be', 'as', 'on', 'at', 'its', 'than', 'per', 'into', 'all',
@@ -49,15 +49,26 @@ DA_WORDS = {'og', 'af', 'er', 'med', 'kun', 'fra', 'som', 'på', 'der', 'den', '
             'hvor', 'by', 'mod', 'antal', 'kunder', 'ordrer', 'linjer', 'gns', 'seneste', 'forrige', 'uanset'}
 
 
-def looks_english(text):
-    """True for a description that reads as English (the catalog and report are Danish)."""
+def _word_counts(text):
     t = re.sub(r'`[^`]*`|\[[^\]]*\]|\b\w+_\w+\b', ' ', str(text or '').lower())
     words = re.findall(r'[a-zæøå]+', t)
     en = sum(w in EN_WORDS for w in words)
     da = sum(w in DA_WORDS or bool(re.search('[æøå]', w)) for w in words)
+    return words, en, da
+
+
+def looks_english(text):
+    """True for a description that reads as English."""
+    words, en, da = _word_counts(text)
     return (en >= 2 and en > 2 * da) or (da == 0 and en >= 1 and len(words) <= 6)
-PII_DEFAULT = 'Mulig PII - vurdér'
-UPSTREAM_AUTO = 'Opstrøms kilde (auto)'   # last auto value; tells auto text apart from own edits
+
+
+def needs_translation(text):
+    """True for a model description that is not in English (the catalog is English). Detects Danish."""
+    words, en, da = _word_counts(text)
+    return (da >= 2 and da > en) or (da >= 1 and en == 0)
+PII_DEFAULT = 'Possible PII - assess'
+UPSTREAM_AUTO = 'Upstream source (auto)'   # last auto value; tells auto text apart from own edits
 
 
 # ---------------------------------------------------------------------------
@@ -82,8 +93,8 @@ def load_parser(explicit=None):
             if not hasattr(mod, 'enrich_model'):
                 continue  # old parser version without lineage support
             return mod, c
-    sys.exit('Fandt ikke pbip-governance/scripts/parse_pbip.py (med lineage-understøttelse). '
-             'Angiv stien med --parser eller miljøvariablen PBIP_PARSER.')
+    sys.exit('Could not find pbip-governance/scripts/parse_pbip.py (with lineage support). '
+             'Give the path with --parser or the environment variable PBIP_PARSER.')
 
 
 # ---------------------------------------------------------------------------
@@ -109,20 +120,20 @@ def classify_table(t, rels):
     if t['measures'] and all(c['isHidden'] for c in t['columns']):
         return 'Measures'
     if t.get('dataCategory', '').lower() == 'time' or re.match(r'^(dim_)?(date|dato|kalender|calendar)', n):
-        return 'Dato'
+        return 'Date'
     if n.startswith(('fact_', 'fct_', 'f_', 'fakta')):
-        return 'Fakta'
+        return 'Fact'
     if n.startswith(('dim_', 'd_')):
         return 'Dimension'
     if n.startswith(('bridge', 'bro_')):
-        return 'Bro'
+        return 'Bridge'
     many = any(r['from']['table'] == t['name'] for r in rels)
     one = any(r['to']['table'] == t['name'] for r in rels)
     if many and not one:
-        return 'Fakta'
+        return 'Fact'
     if one:
         return 'Dimension'
-    return 'Hjælpe'
+    return 'Helper'
 
 
 def source_text(src):
@@ -142,7 +153,7 @@ def origin_text(origin):
         return f"{obj}.{origin.get('column', '')}"
     if k == 'computed':
         step = origin.get('step', '')
-        return f"Beregnet i {origin.get('query', '')}" + (f" (trin {step})" if step and step != '__expr__' else '')
+        return f"Calculated in {origin.get('query', '')}" + (f" (step {step})" if step and step != '__expr__' else '')
     if k == 'join':
         return f"{origin.get('query', '')}[{origin.get('column', '')}]"
     return ''
@@ -151,7 +162,7 @@ def origin_text(origin):
 def lineage_text(events):
     parts = []
     for e in events or []:
-        if e['action'] == 'Datatype sat':
+        if e['action'] == 'Data type set':
             continue
         d = short(e.get('detail', ''), 60)
         parts.append(f"{e['query']}: {e['action']}" + (f" ({d})" if d else ''))
@@ -159,7 +170,7 @@ def lineage_text(events):
 
 
 # ---------------------------------------------------------------------------
-# Opstrøms kilde (automatic)
+# Upstream source (automatic)
 # ---------------------------------------------------------------------------
 
 def _file_label(src):
@@ -191,24 +202,43 @@ def column_objects(c, steps):
     objs = [_obj_label(o['object'])]
     nav_q = next((e['query'] for e in ev if e['action'] == 'Navigation'), None)
     for e in ev:
-        if e['action'] == 'Samlet (append)' and e['query'] == nav_q:
+        if e['action'] == 'Combined (append)' and e['query'] == nav_q:
             parts = []
             for step in [x.strip() for x in e['detail'].split(',')]:
-                parts += _nav_items(steps.get((e['query'], step), ''))
+                parts += _nav_items_back(e['query'], step, steps)
             if len(parts) > 1:
                 objs = list(dict.fromkeys(parts))
     return objs
 
 
+def _nav_items_back(query, step, steps, hops=12):
+    """Sheet/table names behind a step: follow the first table argument back through the query's steps
+    until a navigation step (`Source{[Item="x", Kind="Sheet"]}[Data]`) is found."""
+    name = step[2:-1].replace('""', '"') if step.startswith('#"') and step.endswith('"') else step
+    for _ in range(hops):
+        expr = steps.get((query, name))
+        if expr is None:
+            return _nav_items(name)
+        found = _nav_items(expr)
+        if found:
+            return found
+        m = re.match(r'^\s*[\w.]+\(\s*(#"(?:[^"]|"")*"|[^\W\d][\w.]*)', expr)
+        if not m:
+            return []
+        nxt = m.group(1)
+        name = nxt[2:-1].replace('""', '"') if nxt.startswith('#"') else nxt
+    return []
+
+
 def auto_upstream_column(c, table, steps, sql):
     """Upstream text for a column from its Power Query origin, followed through SQL when given."""
     if c.get('isCalculated'):
-        return 'Beregnet kolonne (DAX) i Power BI'
+        return 'Calculated column (DAX) in Power BI'
     o, ev = c.get('origin') or {}, c.get('lineage') or []
-    idx = next((e for e in ev if e['action'] == 'Indeks/nøgle'), None)
+    idx = next((e for e in ev if e['action'] == 'Index/key'), None)
     if idx:
-        return ('Surrogatnøgle genereret i Power Query' if idx['query'] == table
-                else f"Surrogatnøgle fra {idx['query']} (genereret i Power Query)")
+        return ('Surrogate key generated in Power Query' if idx['query'] == table
+                else f"Surrogate key from {idx['query']} (generated in Power Query)")
     kind = o.get('kind')
     if kind == 'source':
         obj, col, src = o.get('object', ''), o.get('column', ''), o.get('source') or {}
@@ -227,10 +257,10 @@ def auto_upstream_column(c, table, steps, sql):
         expr = steps.get((o.get('query'), o.get('step')), '')
         if expr.lstrip().startswith('#table'):
             q = o.get('query', '')
-            return 'Fast liste i Power Query' if q == table else f'Opslag i fast liste i Power Query ({q})'
-        calc = next((e for e in reversed(ev) if e['action'] == 'Beregnet'), None)
+            return 'Fixed list in Power Query' if q == table else f'Lookup in fixed list in Power Query ({q})'
+        calc = next((e for e in reversed(ev) if e['action'] == 'Calculated'), None)
         if calc:
-            return f"Beregnet i Power Query ({calc['query']}): {short(re.sub(r'^each\\s+', '', calc['detail']), 90)}"
+            return f"Calculated in Power Query ({calc['query']}): {short(re.sub(r'^each\\s+', '', calc['detail']), 90)}"
         return f"Genereret i Power Query ({o.get('query', '')})"
     if kind == 'join':
         return f"{o.get('query', '')}[{o.get('column', '')}] via join i Power Query"
@@ -239,7 +269,7 @@ def auto_upstream_column(c, table, steps, sql):
 
 def auto_upstream_table(t, ttype, steps, sql, model):
     if ttype == 'Measures':
-        return 'Ingen – measure-tabel i Power BI'
+        return 'None – measure table in Power BI'
     cols = [c for c in t['columns'] if not c.get('isCalculated')]
     origins = [c.get('origin') or {} for c in cols]
     raw_objs = sorted({o.get('object') for o in origins if o.get('kind') == 'source' and o.get('object')})
@@ -257,12 +287,12 @@ def auto_upstream_table(t, ttype, steps, sql, model):
         return ''
     exprs = [steps.get((o.get('query'), o.get('step')), '') for o in origins]
     if all(e.lstrip().startswith('#table') for e in exprs):
-        return 'Fast liste i Power Query'
+        return 'Fixed list in Power Query'
     part = next(iter(t['partitions']), {})
     refs = part.get('references', [])
     queries = {e['name']: e for e in model.get('expressions', []) if e['kind'] == 'query'}
     tables = {x['name'] for x in model['tables']}
-    only_keys = all(any(e['action'] == 'Indeks/nøgle' for e in (c.get('lineage') or [])) for c in cols)
+    only_keys = all(any(e['action'] == 'Index/key' for e in (c.get('lineage') or [])) for c in cols)
     if only_keys:
         # a bridge/link table: rows come from a shared query, keys are looked up in dimensions
         items, files = [], set()
@@ -275,17 +305,17 @@ def auto_upstream_table(t, ttype, steps, sql, model):
         if items:
             dims = [r for r in refs if r in tables]
             return (f"{', '.join(sorted(files)) + ' › ' if files else ''}{', '.join(dict.fromkeys(items))}"
-                    + (f" (nøgler slået op i {', '.join(dims)})" if dims else ''))
-    return 'Genereret i Power Query' + (f" ud fra {', '.join(refs)}" if refs else '')
+                    + (f" (keys looked up in {', '.join(dims)})" if dims else ''))
+    return 'Generated in Power Query' + (f" from {', '.join(refs)}" if refs else '')
 
 
 def apply_upstream(row, key, auto, prev):
-    """Fill Opstrøms kilde with the auto text unless the user wrote something else."""
+    """Fill Upstream source with the auto text unless the user wrote something else."""
     p = prev.get(key) or {}
-    cur = str(p.get('Opstrøms kilde') or '').strip()
+    cur = str(p.get('Upstream source') or '').strip()
     last_auto = str(p.get(UPSTREAM_AUTO) or '').strip()
     if not cur or cur == last_auto:
-        row['Opstrøms kilde'] = auto
+        row['Upstream source'] = auto
     row[UPSTREAM_AUTO] = auto
 
 
@@ -294,7 +324,7 @@ def apply_upstream(row, key, auto, prev):
 # ---------------------------------------------------------------------------
 
 def template_json(key):
-    """pbip-layouts template.json (templates/<key>) ved siden af denne skill, eller None."""
+    """pbip-layout's template.json (templates/<key>) next to this skill, or None."""
     here = Path(__file__).resolve()
     for root in (here.parents[2], here.parents[3] / 'skills', Path.home() / '.claude' / 'skills'):
         p = root / 'pbip-layout' / 'templates' / key / 'template.json'
@@ -304,7 +334,7 @@ def template_json(key):
 
 
 def template_page_ids(key='adventureworks'):
-    """Side-id'erne gen-report.js giver skabelonens sider: md5('pbip-layout:<skabelon>:<side>')[:20]."""
+    """The page ids gen-report.js gives the template's pages: md5('pbip-layout:<template>:<page key>')[:20]."""
     import hashlib
     tpl = template_json(key) or {}
     return {hashlib.md5(f'pbip-layout:{key}:{p["key"]}'.encode()).hexdigest()[:20]: p['displayName']
@@ -317,7 +347,7 @@ def slots_from_config(cfg):
     def add(slot, field, role, label=''):
         if field:
             out.append({'slot': slot, 'field': field, 'role': role, 'label': label})
-    # pbip-layouts rapportskabelon: config.fields kobler skabelonfelter til modellen, config.pages er siderne
+    # pbip-layout's report template: config.fields maps template fields to the model, config.pages the pages
     if 'fields' in cfg and 'pages' in cfg:
         tpl = template_json(cfg.get('template') or 'adventureworks') or {}
         names = {p['key']: p['displayName'] for p in tpl.get('pages', [])}
@@ -326,39 +356,39 @@ def slots_from_config(cfg):
             if not model_field:
                 continue
             label = (cfg.get('labels') or {}).get(tf) or tf[tf.index('[') + 1:-1].split('.')[-1]
-            role = 'Measure' if (tfields.get(tf) or {}).get('kind') == 'Measure' else 'Kolonne'
+            role = 'Measure' if (tfields.get(tf) or {}).get('kind') == 'Measure' else 'Column'
             for page in (tfields.get(tf) or {}).get('pages', cfg['pages']):
                 if page in cfg['pages']:
                     add(names.get(page, page), model_field, role, label)
         return out
     for i, k in enumerate(cfg.get('kpis', []), 1):
-        add(f'KPI {i}', k.get('measure'), 'Værdi', k.get('label', ''))
+        add(f'KPI {i}', k.get('measure'), 'Value', k.get('label', ''))
     tr = cfg.get('trend', {})
-    add('Trend', tr.get('measure'), 'Værdi', tr.get('title', ''))
-    add('Trend', tr.get('monthColumn'), 'Akse', tr.get('title', ''))
+    add('Trend', tr.get('measure'), 'Value', tr.get('title', ''))
+    add('Trend', tr.get('monthColumn'), 'Axis', tr.get('title', ''))
     for i, m in enumerate(cfg.get('monthly', []), 1):
-        for key, role in (('sparkMeasure', 'Sparkline'), ('currentMeasure', 'Seneste måned'),
-                          ('labelMeasure', 'Forrige måned-tekst'), ('colorMeasure', 'Farve')):
-            add(f'Månedskort {i}', m.get(key), role, m.get('title', ''))
+        for key, role in (('sparkMeasure', 'Sparkline'), ('currentMeasure', 'Latest month'),
+                          ('labelMeasure', 'Previous month text'), ('colorMeasure', 'Colour')):
+            add(f'Monthly card {i}', m.get(key), role, m.get('title', ''))
     b = cfg.get('bar', {})
-    add('Søjler pr. kategori', b.get('measure'), 'Værdi', b.get('title', ''))
-    add('Søjler pr. kategori', b.get('categoryColumn'), 'Kategori', b.get('title', ''))
+    add('Bars per category', b.get('measure'), 'Value', b.get('title', ''))
+    add('Bars per category', b.get('categoryColumn'), 'Category', b.get('title', ''))
     tb = cfg.get('table', {})
-    add('Top 10-tabel', tb.get('rowColumn'), 'Række', tb.get('title', ''))
+    add('Top 10 table', tb.get('rowColumn'), 'Row', tb.get('title', ''))
     for c in tb.get('columns', []):
-        add('Top 10-tabel', c.get('measure'), 'Kolonne', tb.get('title', ''))
+        add('Top 10 table', c.get('measure'), 'Column', tb.get('title', ''))
     for key, role in (('sortMeasure', 'Sortering'), ('dataBarMeasure', 'Data bars'),
                       ('gradientMeasure', 'Farvegradient')):
-        add('Top 10-tabel', tb.get(key), role, tb.get('title', ''))
-    add('Top 10-tabel', (tb.get('topN') or {}).get('orderByColumn'), 'TopN-filter', tb.get('title', ''))
+        add('Top 10 table', tb.get(key), role, tb.get('title', ''))
+    add('Top 10 table', (tb.get('topN') or {}).get('orderByColumn'), 'TopN-filter', tb.get('title', ''))
     for i, h in enumerate(cfg.get('highlights', []), 1):
-        add(f'Fremhævning {i}', h.get('measure'), 'Værdi', h.get('header', ''))
+        add(f'Highlight {i}', h.get('measure'), 'Value', h.get('header', ''))
     return out
 
 
-ROLE_DA = {'Y': 'Værdi', 'Values': 'Værdi', 'Data': 'Værdi', 'Category': 'Kategori', 'Rows': 'Række',
-           'Columns': 'Kolonne', 'Tooltips': 'Tooltip', 'Legend': 'Forklaring', 'Series': 'Serie',
-           'X': 'Akse', 'Size': 'Størrelse'}
+ROLE_DA = {'Y': 'Value', 'Values': 'Value', 'Data': 'Value', 'Category': 'Category', 'Rows': 'Row',
+           'Columns': 'Column', 'Tooltips': 'Tooltip', 'Legend': 'Legend', 'Series': 'Series',
+           'X': 'Axis', 'Size': 'Size'}
 
 
 def slots_from_page(page):
@@ -379,13 +409,13 @@ def slots_from_page(page):
         elif typ == 'lineChart':
             slot = 'Trend'
         elif y >= 760 and x < 1060 and typ in ('areaChart', 'cardVisual'):
-            slot = f'Månedskort {bucket(x, [96, 422, 748])}'
+            slot = f'Monthly card {bucket(x, [96, 422, 748])}'
         elif typ == 'clusteredBarChart':
-            slot = 'Søjler pr. kategori'
+            slot = 'Bars per category'
         elif typ == 'tableEx':
-            slot = 'Top 10-tabel'
+            slot = 'Top 10 table'
         elif typ == 'cardVisual' and y >= 930:
-            slot = f'Fremhævning {bucket(x, [1072, 1500])}'
+            slot = f'Highlight {bucket(x, [1072, 1500])}'
         if not slot:
             continue
         for r in v.get('fieldRefs', []):
@@ -404,20 +434,20 @@ def read_previous(path):
         return prev
     from openpyxl import load_workbook
     wb = load_workbook(path, read_only=True, data_only=True)
-    for sheet in ('Tabeller', 'Kolonner', 'Measures'):
+    for sheet in ('Tables', 'Columns', 'Measures'):
         if sheet not in wb.sheetnames:
             continue
         rows = list(wb[sheet].iter_rows(values_only=True))
         if not rows:
             continue
         head = [str(h or '') for h in rows[0]]
-        if 'Nøgle' not in head:
+        if 'Key' not in head:
             continue
         for r in rows[1:]:
             d = {h: (r[i] if i < len(r) else None) for i, h in enumerate(head)}
-            if d.get('Nøgle'):
+            if d.get('Key'):
                 d['_sheet'] = sheet
-                prev[str(d['Nøgle'])] = d
+                prev[str(d['Key'])] = d
     return prev
 
 
@@ -428,29 +458,29 @@ def merge_editable(key, tmdl_desc, ai, prev, defaults=None):
     for k, v in (defaults or {}).items():
         if not out.get(k):
             out[k] = v
-    prev_desc = str(p.get('Beskrivelse') or '').strip()
+    prev_desc = str(p.get('Description') or '').strip()
     prev_status = str(p.get('Status') or '').strip()
     tmdl_desc = (tmdl_desc or '').strip()
-    if prev_desc and prev_status not in ('Fra model', 'Bør oversættes'):
-        out['Beskrivelse'], out['Status'] = prev_desc, prev_status or 'Redigeret'
-        if prev_status == 'AI-forslag' and ai.get(key) and ai[key].strip() != prev_desc:
+    if prev_desc and prev_status not in ('From model', 'Translate'):
+        out['Description'], out['Status'] = prev_desc, prev_status or 'Edited'
+        if prev_status == 'AI suggestion' and ai.get(key) and ai[key].strip() != prev_desc:
             pass  # keep what is in Excel; a new AI draft never overwrites it
         src = 'Excel'
-    elif tmdl_desc and looks_english(tmdl_desc):
-        # English text from the model: an AI translation may replace it; otherwise flag it
+    elif tmdl_desc and needs_translation(tmdl_desc):
+        # non-English text from the model: an AI translation may replace it; otherwise flag it
         if ai.get(key):
-            out['Beskrivelse'], out['Status'], src = ai[key].strip(), 'AI-forslag', 'AI (oversat fra TMDL)'
+            out['Description'], out['Status'], src = ai[key].strip(), 'AI suggestion', 'AI (translated from TMDL)'
         else:
-            out['Beskrivelse'], out['Status'], src = tmdl_desc, 'Bør oversættes', 'TMDL'
+            out['Description'], out['Status'], src = tmdl_desc, 'Translate', 'TMDL'
     elif tmdl_desc:
-        out['Beskrivelse'], out['Status'], src = tmdl_desc, 'Fra model', 'TMDL'
+        out['Description'], out['Status'], src = tmdl_desc, 'From model', 'TMDL'
     elif ai.get(key):
-        out['Beskrivelse'], out['Status'], src = ai[key].strip(), 'AI-forslag', 'AI'
+        out['Description'], out['Status'], src = ai[key].strip(), 'AI suggestion', 'AI'
     else:
-        out['Beskrivelse'], out['Status'], src = '', 'Mangler', ''
+        out['Description'], out['Status'], src = '', 'Missing', ''
     if out['Status'] not in STATUSES:
-        out['Status'] = 'Redigeret'
-    out['Beskrivelseskilde'] = src
+        out['Status'] = 'Edited'
+    out['Description source'] = src
     return out
 
 
@@ -541,25 +571,25 @@ def build(parsed, slots, prev, ai, pii_reason, sql=None):
         src = part.get('resolvedSource') or {}
         cols_from_origin = sorted({(c.get('origin') or {}).get('object') or '' for c in t['columns']} - {''})
         row = {
-            'Nøgle': t['name'], 'Tabel': t['name'], 'Type': ttype,
-            'Skjult': 'Ja' if t['isHidden'] else '',
-            'Kolonner': len(t['columns']), 'Measures': len(t['measures']),
-            'Kilde': source_text(src),
-            'Kildeobjekter': ', '.join(cols_from_origin),
-            'Opstrøms queries': ', '.join(part.get('references', [])),
-            'Query-gruppe': part.get('queryGroup', ''),
-            'Lagring': part.get('mode', '') + (' (beregnet)' if t.get('isCalculated') else ''),
-            'Dashboard (indirekte)': ', '.join(sorted(indirect.get(t['name'], set()))),
+            'Key': t['name'], 'Table': t['name'], 'Type': ttype,
+            'Hidden': 'Yes' if t['isHidden'] else '',
+            'Columns': len(t['columns']), 'Measures': len(t['measures']),
+            'Source': source_text(src),
+            'Source objects': ', '.join(cols_from_origin),
+            'Upstream queries': ', '.join(part.get('references', [])),
+            'Query group': part.get('queryGroup', ''),
+            'Storage': part.get('mode', '') + (' (calculated)' if t.get('isCalculated') else ''),
+            'Dashboard (indirect)': ', '.join(sorted(indirect.get(t['name'], set()))),
         }
         row.update(merge_editable(t['name'], t.get('description'), ai, prev))
         apply_upstream(row, t['name'], auto_upstream_table(t, ttype, steps, sql, model), prev)
-        row['_type'] = 'Tabel'
+        row['_type'] = 'Table'
         out['tables'].append(row)
-        if row['Status'] == 'Mangler':
-            out['missing'].append({'key': t['name'], 'type': 'Tabel', 'context': {
+        if row['Status'] == 'Missing':
+            out['missing'].append({'key': t['name'], 'type': 'Table', 'context': {
                 'tableType': ttype, 'columns': [c['name'] for c in t['columns']][:40],
-                'measures': [m['name'] for m in t['measures']][:40], 'source': row['Kilde'],
-                'sourceObjects': row['Kildeobjekter']}})
+                'measures': [m['name'] for m in t['measures']][:40], 'source': row['Source'],
+                'sourceObjects': row['Source objects']}})
 
         pk_cols = {r['to']['column'] for r in rels if r['to']['table'] == t['name']}
         for c in t['columns']:
@@ -567,109 +597,109 @@ def build(parsed, slots, prev, ai, pii_reason, sql=None):
                 continue
             key = fkey(t['name'], c['name'])
             pii = pii_reason(c['name'], t['name'])
-            # `annotation PII = not personal` på kolonnen: gennemgået af en person – markeres ikke igen
+            # `annotation PII = not personal` on the column: a person reviewed it – not flagged again
             reviewed = bool(pii) and str((c.get('annotations') or {}).get('PII', '')).strip().strip('"').lower() == 'not personal'
             if reviewed:
                 pii = ''
             origin = c.get('origin') or {}
             row = {
-                'Nøgle': key, 'Tabel': t['name'], 'Kolonne': c['name'],
-                'Datatype': c.get('dataType', ''), 'Format': c.get('formatString', ''),
-                'Skjult': 'Ja' if c['isHidden'] else '',
-                'Nøglefelt': 'Ja' if (c.get('isKey') or c['name'] in pk_cols) else '',
-                'Beregnet': 'DAX' if c.get('isCalculated') else '',
-                'Mulig PII': f'Ja ({pii})' if pii else ('Nej (gennemgået: ikke persondata)' if reviewed else ''),
-                'Oprindelse': origin_text(origin) if not c.get('isCalculated') else 'Beregnet kolonne (DAX)',
-                'Kilde': source_text(origin.get('source')),
-                'Power Query-trin': lineage_text(c.get('lineage')),
+                'Key': key, 'Table': t['name'], 'Column': c['name'],
+                'Data type': c.get('dataType', ''), 'Format': c.get('formatString', ''),
+                'Hidden': 'Yes' if c['isHidden'] else '',
+                'Key field': 'Yes' if (c.get('isKey') or c['name'] in pk_cols) else '',
+                'Calculated': 'DAX' if c.get('isCalculated') else '',
+                'Possible PII': f'Yes ({pii})' if pii else ('No (reviewed: not personal)' if reviewed else ''),
+                'Origin': origin_text(origin) if not c.get('isCalculated') else 'Calculated column (DAX)',
+                'Source': source_text(origin.get('source')),
+                'Power Query steps': lineage_text(c.get('lineage')),
                 'DAX': c.get('expression', '') if c.get('isCalculated') else '',
-                'Dashboard-plads': slot_list(key),
-                'Dashboard (indirekte)': indirect_list(key),
-                'Bruges i rapport': '; '.join(sorted(usage.get(key, set()))),
+                'Dashboard slot': slot_list(key),
+                'Dashboard (indirect)': indirect_list(key),
+                'Used in report': '; '.join(sorted(usage.get(key, set()))),
             }
             row.update(merge_editable(key, c.get('description'), ai, prev,
-                                      defaults={'Følsomhed': PII_DEFAULT if pii else ''}))
-            if not pii and row['Følsomhed'] == PII_DEFAULT:
-                row['Følsomhed'] = ''   # old auto-flag that no longer applies; own text is kept
+                                      defaults={'Sensitivity': PII_DEFAULT if pii else ''}))
+            if not pii and row['Sensitivity'] == PII_DEFAULT:
+                row['Sensitivity'] = ''   # old auto-flag that no longer applies; own text is kept
             apply_upstream(row, key, auto_upstream_column(c, t['name'], steps, sql), prev)
-            row['_type'] = 'Kolonne'
+            row['_type'] = 'Column'
             out['columns'].append(row)
-            if row['Status'] == 'Mangler':
-                out['missing'].append({'key': key, 'type': 'Kolonne', 'context': {
-                    'table': t['name'], 'tableType': ttype, 'dataType': row['Datatype'],
-                    'origin': row['Oprindelse'], 'powerQuery': row['Power Query-trin'],
-                    'dax': row['DAX'], 'dashboard': row['Dashboard-plads'] or row['Dashboard (indirekte)']}})
+            if row['Status'] == 'Missing':
+                out['missing'].append({'key': key, 'type': 'Column', 'context': {
+                    'table': t['name'], 'tableType': ttype, 'dataType': row['Data type'],
+                    'origin': row['Origin'], 'powerQuery': row['Power Query steps'],
+                    'dax': row['DAX'], 'dashboard': row['Dashboard slot'] or row['Dashboard (indirect)']}})
 
         for m in t['measures']:
             key = fkey(t['name'], m['name'])
             d = m.get('dependencies', {})
             cols, tabs, _ = closure(m['name'])
             row = {
-                'Nøgle': key, 'Tabel': t['name'], 'Measure': m['name'],
-                'Mappe': m.get('displayFolder', ''), 'Format': m.get('formatString', ''),
-                'Skjult': 'Ja' if m.get('isHidden') else '',
+                'Key': key, 'Table': t['name'], 'Measure': m['name'],
+                'Folder': m.get('displayFolder', ''), 'Format': m.get('formatString', ''),
+                'Hidden': 'Yes' if m.get('isHidden') else '',
                 'DAX': m.get('expression', ''),
-                'Afhænger af measures': ', '.join(d.get('measures', [])),
-                'Afhænger af kolonner': ', '.join(fkey(c['table'], c['column']) for c in d.get('columns', [])),
-                'Alle kildekolonner': ', '.join(sorted(cols)),
-                'Bruges af measures': ', '.join(sorted(used_by.get(m['name'], set()))),
-                'Dashboard-plads': slot_list(key),
-                'Dashboard (indirekte)': indirect_list(key),
-                'Bruges i rapport': '; '.join(sorted(usage.get(key, set()))),
+                'Depends on measures': ', '.join(d.get('measures', [])),
+                'Depends on columns': ', '.join(fkey(c['table'], c['column']) for c in d.get('columns', [])),
+                'All source columns': ', '.join(sorted(cols)),
+                'Used by measures': ', '.join(sorted(used_by.get(m['name'], set()))),
+                'Dashboard slot': slot_list(key),
+                'Dashboard (indirect)': indirect_list(key),
+                'Used in report': '; '.join(sorted(usage.get(key, set()))),
             }
             row.update(merge_editable(key, m.get('description'), ai, prev))
             row['_type'] = 'Measure'
             out['measures'].append(row)
-            if row['Status'] == 'Mangler':
+            if row['Status'] == 'Missing':
                 out['missing'].append({'key': key, 'type': 'Measure', 'context': {
                     'dax': m.get('expression', ''), 'format': m.get('formatString', ''),
-                    'folder': m.get('displayFolder', ''), 'dependsOn': row['Afhænger af measures'],
-                    'sourceColumns': row['Alle kildekolonner'],
-                    'dashboard': row['Dashboard-plads'] or row['Dashboard (indirekte)']}})
+                    'folder': m.get('displayFolder', ''), 'dependsOn': row['Depends on measures'],
+                    'sourceColumns': row['All source columns'],
+                    'dashboard': row['Dashboard slot'] or row['Dashboard (indirect)']}})
 
     for r in rels:
         card = f"{r.get('fromCardinality', 'many')}:{r.get('toCardinality', 'one')}"
         out['relationships'].append({
-            'Fra': fkey(r['from']['table'], r['from']['column']),
-            'Til': fkey(r['to']['table'], r['to']['column']),
-            'Kardinalitet': {'many:one': 'Mange-til-én', 'one:one': 'Én-til-én',
-                             'many:many': 'Mange-til-mange', 'one:many': 'Én-til-mange'}.get(card, card),
-            'Krydsfilter': 'Begge retninger' if str(r.get('crossFilter', '')).lower().startswith('both') else 'Enkelt',
-            'Aktiv': 'Ja' if r.get('active', True) else 'Nej (USERELATIONSHIP)',
+            'From': fkey(r['from']['table'], r['from']['column']),
+            'To': fkey(r['to']['table'], r['to']['column']),
+            'Cardinality': {'many:one': 'Many-to-one', 'one:one': 'One-to-one',
+                             'many:many': 'Many-to-many', 'one:many': 'One-to-many'}.get(card, card),
+            'Cross filter': 'Both directions' if str(r.get('crossFilter', '')).lower().startswith('both') else 'Single',
+            'Active': 'Yes' if r.get('active', True) else 'No (USERELATIONSHIP)',
         })
 
     for s in model.get('dataSources', []):
-        out['sources'].append({'Type': 'Datakilde', 'Navn': s['kind'], 'Detaljer': s['details'],
-                               'Bruges af': ', '.join(s.get('tables', [])), 'Beskrivelse': ''})
+        out['sources'].append({'Type': 'Data source', 'Name': s['kind'], 'Details': s['details'],
+                               'Used by': ', '.join(s.get('tables', [])), 'Description': ''})
     for e in model.get('expressions', []):
         out['sources'].append({
-            'Type': 'Parameter' if e['kind'] == 'parameter' else 'Delt query',
-            'Navn': e['name'],
-            'Detaljer': e.get('parameterValue', '') if e['kind'] == 'parameter' else source_text(e.get('resolvedSource')),
-            'Bruges af': ', '.join(e.get('references', [])) if e['kind'] != 'parameter' else '',
-            'Query-gruppe': e.get('queryGroup', ''),
-            'Beskrivelse': e.get('description', ''),
+            'Type': 'Parameter' if e['kind'] == 'parameter' else 'Shared query',
+            'Name': e['name'],
+            'Details': e.get('parameterValue', '') if e['kind'] == 'parameter' else source_text(e.get('resolvedSource')),
+            'Used by': ', '.join(e.get('references', [])) if e['kind'] != 'parameter' else '',
+            'Query group': e.get('queryGroup', ''),
+            'Description': e.get('description', ''),
         })
 
-    lookup = {r['Nøgle']: r for r in out['columns'] + out['measures']}
+    lookup = {r['Key']: r for r in out['columns'] + out['measures']}
     for s in slots:
         r = lookup.get(s['field'], {})
         out['slots'].append({
-            'Plads': s['slot'], 'Rolle': s['role'], 'Felt': s['field'],
-            'Type': r.get('_type', '?'), 'Titel': s.get('label', ''),
-            'Beskrivelse': r.get('Beskrivelse', ''),
-            'Kildekolonner': r.get('Alle kildekolonner', '') or r.get('Oprindelse', ''),
+            'Slot': s['slot'], 'Role': s['role'], 'Field': s['field'],
+            'Type': r.get('_type', '?'), 'Title': s.get('label', ''),
+            'Description': r.get('Description', ''),
+            'Source columns': r.get('All source columns', '') or r.get('Origin', ''),
         })
 
     # English model descriptions: ask for a Danish translation through the same AI step
     for r in out['tables'] + out['columns'] + out['measures']:
-        if r['Status'] == 'Bør oversættes':
-            out['missing'].append({'key': r['Nøgle'], 'type': r['_type'], 'translate': r['Beskrivelse'],
-                                   'context': {'table': r.get('Tabel', ''), 'dax': r.get('DAX', ''),
-                                               'origin': r.get('Oprindelse', '')}})
+        if r['Status'] == 'Translate':
+            out['missing'].append({'key': r['Key'], 'type': r['_type'], 'translate': r['Description'],
+                                   'context': {'table': r.get('Table', ''), 'dax': r.get('DAX', ''),
+                                               'origin': r.get('Origin', '')}})
 
-    current = {r['Nøgle'] for r in out['tables'] + out['columns'] + out['measures']}
-    out['removed'] =[{'Nøgle': k, 'Ark': v.get('_sheet', ''), 'Beskrivelse': v.get('Beskrivelse') or '',
+    current = {r['Key'] for r in out['tables'] + out['columns'] + out['measures']}
+    out['removed'] =[{'Key': k, 'Sheet': v.get('_sheet', ''), 'Description': v.get('Description') or '',
                        'Status': v.get('Status') or ''}
                       for k, v in prev.items() if k not in current]
     return out
@@ -690,7 +720,7 @@ def write_excel(cat, path, project, slots_source):
     edit_fill = PatternFill('solid', fgColor='FFF8DC')
     wb = Workbook()
     ws = wb.active
-    ws.title = 'Oversigt'
+    ws.title = 'Overview'
 
     def status_count(rows):
         c = {s: 0 for s in STATUSES}
@@ -701,25 +731,25 @@ def write_excel(cat, path, project, slots_source):
     sc = status_count(all_rows)
     lines = [
         ('Data catalog', project),
-        ('Genereret', datetime.datetime.now().strftime('%Y-%m-%d %H:%M')),
+        ('Generated', datetime.datetime.now().strftime('%Y-%m-%d %H:%M')),
         ('', ''),
-        ('Tabeller', len(cat['tables'])),
-        ('Kolonner', len(cat['columns'])),
+        ('Tables', len(cat['tables'])),
+        ('Columns', len(cat['columns'])),
         ('Measures', len(cat['measures'])),
-        ('Relationer', len(cat['relationships'])),
-        ('Dashboard-felter', f"{len(cat['slots'])} ({slots_source})"),
+        ('Relationships', len(cat['relationships'])),
+        ('Dashboard fields', f"{len(cat['slots'])} ({slots_source})"),
         ('', ''),
-        ('Beskrivelser', ''),
+        ('Descriptions', ''),
     ] + [(f'  {s}', n) for s, n in sc.items()] + [
         ('', ''),
-        ('Fjernet siden sidst', len(cat['removed'])),
-        ('Ændringer siden sidst', len(cat.get('changes', [])) if cat.get('changesSince') else 'første kørsel'),
+        ('Removed since last run', len(cat['removed'])),
+        ('Changes since last run', len(cat.get('changes', [])) if cat.get('changesSince') else 'first run'),
         ('', ''),
-        ('Sådan redigerer du', 'Ret kun de turkise kolonner (Beskrivelse, Ejer, Følsomhed, Opstrøms kilde, Status).'),
-        ('', 'Sæt Status = Godkendt når en beskrivelse må skrives tilbage til modellen (///-beskrivelse i TMDL).'),
-        ('', 'Næste kørsel læser dine rettelser og fletter dem ind - de overskrives ikke.'),
-        ('Status-værdier', ' · '.join(STATUSES)),
-        ('', 'Bør oversættes = beskrivelsen i modellen er på engelsk; et AI-forslag på dansk erstatter den.'),
+        ('How to edit', 'Edit only the teal columns (Description, Owner, Sensitivity, Upstream source, Status).'),
+        ('', 'Set Status = Approved when a description may be written back to the model (/// description in TMDL).'),
+        ('', 'The next run reads your edits and merges them in - they are never overwritten.'),
+        ('Status values', ' · '.join(STATUSES)),
+        ('', 'Translate = the description in the model is not in English; an English AI suggestion replaces it.'),
     ]
     for r in lines:
         ws.append(list(r))
@@ -751,65 +781,65 @@ def write_excel(cat, path, project, slots_source):
             dv = DataValidation(type='list', formula1='"' + ','.join(STATUSES) + '"', allow_blank=True)
             s.add_data_validation(dv)
             dv.add(f'{col}2:{col}{len(rows) + 1}')
-        s.freeze_panes = 'B2' if 'Nøgle' in cols else 'A2'
+        s.freeze_panes = 'B2' if 'Key' in cols else 'A2'
         if rows:
             s.auto_filter.ref = f'A1:{get_column_letter(len(cols))}{len(rows) + 1}'
         return s
 
-    tail = EDITABLE + ['Beskrivelseskilde']
-    sheet('Tabeller', cat['tables'],
-          ['Nøgle', 'Type', 'Skjult', 'Kolonner', 'Measures', 'Kilde', 'Kildeobjekter',
-           'Opstrøms queries', 'Query-gruppe', 'Lagring', 'Dashboard (indirekte)'] + tail + [UPSTREAM_AUTO],
-          wide=('Beskrivelse', 'Opstrøms kilde'))
-    sheet('Kolonner', cat['columns'],
-          ['Nøgle', 'Tabel', 'Kolonne', 'Datatype', 'Format', 'Skjult', 'Nøglefelt', 'Beregnet',
-           'Mulig PII', 'Oprindelse', 'Kilde', 'Power Query-trin', 'DAX', 'Dashboard-plads',
-           'Dashboard (indirekte)', 'Bruges i rapport'] + tail + [UPSTREAM_AUTO],
-          wide=('Beskrivelse', 'Power Query-trin', 'DAX', 'Opstrøms kilde'))
+    tail = EDITABLE + ['Description source']
+    sheet('Tables', cat['tables'],
+          ['Key', 'Type', 'Hidden', 'Columns', 'Measures', 'Source', 'Source objects',
+           'Upstream queries', 'Query group', 'Storage', 'Dashboard (indirect)'] + tail + [UPSTREAM_AUTO],
+          wide=('Description', 'Upstream source'))
+    sheet('Columns', cat['columns'],
+          ['Key', 'Table', 'Column', 'Data type', 'Format', 'Hidden', 'Key field', 'Calculated',
+           'Possible PII', 'Origin', 'Source', 'Power Query steps', 'DAX', 'Dashboard slot',
+           'Dashboard (indirect)', 'Used in report'] + tail + [UPSTREAM_AUTO],
+          wide=('Description', 'Power Query steps', 'DAX', 'Upstream source'))
     sheet('Measures', cat['measures'],
-          ['Nøgle', 'Tabel', 'Measure', 'Mappe', 'Format', 'Skjult', 'DAX', 'Afhænger af measures',
-           'Afhænger af kolonner', 'Alle kildekolonner', 'Bruges af measures', 'Dashboard-plads',
-           'Dashboard (indirekte)', 'Bruges i rapport'] + tail,
-          wide=('Beskrivelse', 'DAX', 'Alle kildekolonner'))
+          ['Key', 'Table', 'Measure', 'Folder', 'Format', 'Hidden', 'DAX', 'Depends on measures',
+           'Depends on columns', 'All source columns', 'Used by measures', 'Dashboard slot',
+           'Dashboard (indirect)', 'Used in report'] + tail,
+          wide=('Description', 'DAX', 'All source columns'))
     sheet('Dashboard', cat['slots'],
-          ['Plads', 'Rolle', 'Felt', 'Type', 'Titel', 'Beskrivelse', 'Kildekolonner'],
-          wide=('Beskrivelse', 'Kildekolonner'))
-    sheet('Relationer', cat['relationships'], ['Fra', 'Til', 'Kardinalitet', 'Krydsfilter', 'Aktiv'])
-    sheet('Kilder', cat['sources'], ['Type', 'Navn', 'Detaljer', 'Bruges af', 'Query-gruppe', 'Beskrivelse'],
-          wide=('Detaljer', 'Beskrivelse'))
+          ['Slot', 'Role', 'Field', 'Type', 'Title', 'Description', 'Source columns'],
+          wide=('Description', 'Source columns'))
+    sheet('Relationships', cat['relationships'], ['From', 'To', 'Cardinality', 'Cross filter', 'Active'])
+    sheet('Sources', cat['sources'], ['Type', 'Name', 'Details', 'Used by', 'Query group', 'Description'],
+          wide=('Details', 'Description'))
     if cat.get('changes'):
-        sheet('Ændringer', cat['changes'], ['Ændring', 'Ark', 'Nøgle', 'Felt', 'Før', 'Efter'],
-              wide=('Før', 'Efter'))
+        sheet('Changes', cat['changes'], ['Change', 'Sheet', 'Key', 'Field', 'Before', 'After'],
+              wide=('Before', 'After'))
     if cat['removed']:
-        sheet('Fjernet', cat['removed'], ['Nøgle', 'Ark', 'Beskrivelse', 'Status'], wide=('Beskrivelse',))
+        sheet('Removed', cat['removed'], ['Key', 'Sheet', 'Description', 'Status'], wide=('Description',))
     wb.save(path)
 
 
 # fields compared between runs (descriptions included: they are what reviewers check)
 DIFF_FIELDS = {
-    'tables': ('Tabeller', ['Type', 'Kildeobjekter', 'Beskrivelse', 'Status']),
-    'columns': ('Kolonner', ['Datatype', 'Format', 'Skjult', 'Oprindelse', UPSTREAM_AUTO, 'Beskrivelse', 'Status']),
-    'measures': ('Measures', ['DAX', 'Format', 'Mappe', 'Skjult', 'Beskrivelse', 'Status']),
+    'tables': ('Tables', ['Type', 'Source objects', 'Description', 'Status']),
+    'columns': ('Columns', ['Data type', 'Format', 'Hidden', 'Origin', UPSTREAM_AUTO, 'Description', 'Status']),
+    'measures': ('Measures', ['DAX', 'Format', 'Folder', 'Hidden', 'Description', 'Status']),
 }
 
 
 def diff_catalog(old, cat):
-    """Rows for the 'Ændringer' sheet: new and changed items since the previous catalog.json.
-    Removed items are listed in 'Fjernet' already."""
+    """Rows for the 'Changes' sheet: new and changed items since the previous catalog.json.
+    Removed items are listed in 'Removed' already."""
     out = []
     for part, (sheet_name, fields) in DIFF_FIELDS.items():
-        before = {r['Nøgle']: r for r in old.get(part, [])}
+        before = {r['Key']: r for r in old.get(part, [])}
         for r in cat[part]:
-            o = before.get(r['Nøgle'])
+            o = before.get(r['Key'])
             if o is None:
-                out.append({'Ændring': 'Ny', 'Ark': sheet_name, 'Nøgle': r['Nøgle'], 'Felt': '', 'Før': '',
-                            'Efter': short(r.get('Beskrivelse', ''), 120)})
+                out.append({'Change': 'New', 'Sheet': sheet_name, 'Key': r['Key'], 'Field': '', 'Before': '',
+                            'After': short(r.get('Description', ''), 120)})
                 continue
             for f in fields:
                 a, b = str(o.get(f) or '').strip(), str(r.get(f) or '').strip()
                 if a != b:
-                    out.append({'Ændring': 'Ændret', 'Ark': sheet_name, 'Nøgle': r['Nøgle'], 'Felt': f,
-                                'Før': a, 'Efter': b})
+                    out.append({'Change': 'Changed', 'Sheet': sheet_name, 'Key': r['Key'], 'Field': f,
+                                'Before': a, 'After': b})
     return out
 
 
@@ -862,9 +892,9 @@ def write_lineage(parsed, cat, slots, path, fence, project):
     mdeps = {m['name']: m.get('dependencies', {}) for t in model['tables'] for m in t['measures']}
     exprs = {e['name']: e for e in model.get('expressions', [])}
     out = [f'# Data lineage – {project}', '',
-           f"Genereret {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} af pbip-catalog. "
-           'Farver: sort = datakilde, grå = Power Query, mørk = tabel, hvid = kolonne, '
-           'turkis = measure, rosa = dashboard.', '']
+           f"Generated {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')} by pbip-catalog. "
+           'Colours: black = data source, grey = Power Query, dark = table, white = column, '
+           'teal = measure, pink = dashboard.', '']
     if fence == 'azdo':
         out += ['[[_TOC_]]', '']
 
@@ -913,19 +943,19 @@ def write_lineage(parsed, cat, slots, path, fence, project):
                 else:
                     used.add(r['table'])
         if used:
-            pid = mm.node('p:' + page['name'], f"Side: {page.get('displayName', page['name'])}", 'page', 'hex')
+            pid = mm.node('p:' + page['name'], f"Page: {page.get('displayName', page['name'])}", 'page', 'hex')
             for tname in sorted(used):
                 if tname in tables:
                     mm.edge(mm.ids.get('t:' + tname) or mm.node('t:' + tname, tname, 'tbl'), pid)
-    out += ['## Overblik (tabelniveau)', '',
-            'Datakilder → delte Power Query-queries → tabeller → rapportsider.', '', mm.render(fence)]
+    out += ['## Overview (table level)', '',
+            'Data sources → shared Power Query queries → tables → report pages.', '', mm.render(fence)]
 
     # 2. per dashboard slot
     if slots:
-        out += ['## Dashboard-pladser', '',
-                'Én graf pr. plads på dashboard-siden fra pbip-layout: measure → afhængige measures → '
-                'kolonner → oprindelse i kilden.', '']
-        col_rows = {r['Nøgle']: r for r in cat['columns']}
+        out += ['## Dashboard slots', '',
+                'One graph per slot on the dashboard page from pbip-layout: measure → dependent measures → '
+                'columns → origin in the source.', '']
+        col_rows = {r['Key']: r for r in cat['columns']}
         by_slot = {}
         for s in slots:
             by_slot.setdefault(s['slot'], []).append(s)
@@ -954,8 +984,8 @@ def write_lineage(parsed, cat, slots, path, fence, project):
                 mm.edge(cid, parent)
                 used_cols.add(key)
                 r = col_rows.get(key)
-                if r and r.get('Oprindelse') and not r['Oprindelse'].startswith('Beregnet'):
-                    oid = mm.node('o:' + r['Oprindelse'], r['Oprindelse'], 'src', 'stadium')
+                if r and r.get('Origin') and not r['Origin'].startswith('Calculated'):
+                    oid = mm.node('o:' + r['Origin'], r['Origin'], 'src', 'stadium')
                     mm.edge(oid, cid)
             seen = set()
             for it in items:
@@ -967,21 +997,21 @@ def write_lineage(parsed, cat, slots, path, fence, project):
             out += [f'### {slot}', '', mm.render(fence)]
             rows = [col_rows[k] for k in sorted(used_cols) if k in col_rows]
             if rows:
-                out += ['| Kolonne | Oprindelse | Power Query-trin |', '|---|---|---|']
+                out += ['| Column | Origin | Power Query steps |', '|---|---|---|']
                 for r in rows:
-                    out.append(f"| `{r['Nøgle']}` | {md(r['Oprindelse'])} | {md(r['Power Query-trin']) or '–'} |")
+                    out.append(f"| `{r['Key']}` | {md(r['Origin'])} | {md(r['Power Query steps']) or '–'} |")
                 out.append('')
 
     # 3. column lineage per table
-    out += ['## Kolonne-lineage pr. tabel', '']
+    out += ['## Column lineage per table', '']
     for t in model['tables']:
-        rows = [r for r in cat['columns'] if r['Tabel'] == t['name']]
+        rows = [r for r in cat['columns'] if r['Table'] == t['name']]
         if not rows:
             continue
-        out += ['<details>', f"<summary><b>{t['name']}</b> ({len(rows)} kolonner)</summary>", '',
-                '| Kolonne | Oprindelse | Power Query-trin / DAX |', '|---|---|---|']
+        out += ['<details>', f"<summary><b>{t['name']}</b> ({len(rows)} columns)</summary>", '',
+                '| Column | Origin | Power Query steps / DAX |', '|---|---|---|']
         for r in rows:
-            out.append(f"| `{r['Kolonne']}` | {md(r['Oprindelse'])} | {md(r['DAX'] or r['Power Query-trin']) or '–'} |")
+            out.append(f"| `{r['Column']}` | {md(r['Origin'])} | {md(r['DAX'] or r['Power Query steps']) or '–'} |")
         out += ['', '</details>', '']
     Path(path).write_text('\n'.join(out), encoding='utf-8')
 
@@ -1006,20 +1036,20 @@ def tq(text):
     return "'''" + str(text or '').replace('\\', '\\\\').replace("'''", "\\'''") + "'''"
 
 
-GROUP_COLORS = {'Fakta': '#333333', 'Dimension': '#605E5C', 'Dato': '#252423',
-                'Bro': '#605E5C', 'Measures': '#1FC8C0', 'Hjælpe': '#C8C6C4'}
+GROUP_COLORS = {'Fact': '#333333', 'Dimension': '#605E5C', 'Date': '#252423',
+                'Bridge': '#605E5C', 'Measures': '#1FC8C0', 'Helper': '#C8C6C4'}
 
 
 def write_dbml(parsed, cat, path, project):
     model = parsed['model']
     rels = model['relationships']
-    trows = {r['Nøgle']: r for r in cat['tables']}
-    crows = {r['Nøgle']: r for r in cat['columns']}
-    mrows = {r['Nøgle']: r for r in cat['measures']}
-    out = [f'// Genereret af pbip-catalog {datetime.date.today().isoformat()} – rediger beskrivelser i catalog.xlsx',
+    trows = {r['Key']: r for r in cat['tables']}
+    crows = {r['Key']: r for r in cat['columns']}
+    mrows = {r['Key']: r for r in cat['measures']}
+    out = [f'// Generated by pbip-catalog {datetime.date.today().isoformat()} – edit descriptions in catalog.xlsx',
            f'Project {dq(project)} {{', "  database_type: 'Power BI'",
-           '  Note: ' + tq(f'Power BI semantisk model "{project}". Tabeller, kolonner og measures med '
-                           'beskrivelser, oprindelse og dashboard-pladser i noterne.'), '}', '']
+           '  Note: ' + tq(f'Power BI semantic model "{project}". Tables, columns and measures with '
+                           'descriptions, origin and dashboard slots in the notes.'), '}', '']
     groups = {}
     for t in model['tables']:
         tr = trows[t['name']]
@@ -1035,17 +1065,17 @@ def write_dbml(parsed, cat, path, project):
             settings = []
             if c['name'] == pk:
                 settings.append('pk')
-            note = [row['Beskrivelse']]
+            note = [row['Description']]
             if c['isHidden']:
-                note.append('Skjult')
+                note.append('Hidden')
             if c.get('isCalculated'):
-                note.append('Beregnet (DAX): ' + short(c.get('expression', ''), 200))
-            elif row['Oprindelse']:
-                note.append('Oprindelse: ' + row['Oprindelse'])
-            if row['Mulig PII'].startswith('Ja'):
-                note.append('Mulig PII')
-            if row['Dashboard-plads']:
-                note.append('Dashboard: ' + row['Dashboard-plads'])
+                note.append('Calculated (DAX): ' + short(c.get('expression', ''), 200))
+            elif row['Origin']:
+                note.append('Origin: ' + row['Origin'])
+            if row['Possible PII'].startswith('Yes'):
+                note.append('Possible PII')
+            if row['Dashboard slot']:
+                note.append('Dashboard: ' + row['Dashboard slot'])
             note = ' · '.join(x for x in note if x)
             if note:
                 settings.append('note: ' + sq(note))
@@ -1053,34 +1083,34 @@ def write_dbml(parsed, cat, path, project):
             out.append(f"  {dq(c['name'])} {dtype}" + (f" [{', '.join(settings)}]" if settings else ''))
         for m in t['measures']:
             row = mrows[fkey(t['name'], m['name'])]
-            note = [row['Beskrivelse'], 'DAX: ' + short(m.get('expression', ''), 300)]
-            if row['Dashboard-plads']:
-                note.append('Dashboard: ' + row['Dashboard-plads'])
-            elif row['Dashboard (indirekte)']:
-                note.append('Bruges indirekte i: ' + row['Dashboard (indirekte)'])
+            note = [row['Description'], 'DAX: ' + short(m.get('expression', ''), 300)]
+            if row['Dashboard slot']:
+                note.append('Dashboard: ' + row['Dashboard slot'])
+            elif row['Dashboard (indirect)']:
+                note.append('Used indirectly in: ' + row['Dashboard (indirect)'])
             out.append(f"  {dq(m['name'])} measure [note: {sq(' · '.join(x for x in note if x))}]")
-        tnote = [tr['Beskrivelse'], f'Type: {ttype}']
-        if tr['Kilde']:
-            tnote.append(f"Kilde: {tr['Kilde']}")
-        if tr['Kildeobjekter']:
-            tnote.append(f"Kildeobjekter: {tr['Kildeobjekter']}")
-        if tr['Opstrøms queries']:
-            tnote.append(f"Power Query: {tr['Opstrøms queries']}")
+        tnote = [tr['Description'], f'Type: {ttype}']
+        if tr['Source']:
+            tnote.append(f"Source: {tr['Source']}")
+        if tr['Source objects']:
+            tnote.append(f"Source objects: {tr['Source objects']}")
+        if tr['Upstream queries']:
+            tnote.append(f"Power Query: {tr['Upstream queries']}")
         inactive = [f"{r['from']['column']} → {r['to']['table']}.{r['to']['column']}"
                     for r in rels if r['from']['table'] == t['name'] and not r.get('active', True)]
         if inactive:
-            tnote.append('Inaktive relationer (USERELATIONSHIP): ' + '; '.join(inactive))
+            tnote.append('Inactive relationships (USERELATIONSHIP): ' + '; '.join(inactive))
         both = [f"{r['from']['column']} ↔ {r['to']['table']}.{r['to']['column']}"
                 for r in rels if r['from']['table'] == t['name']
                 and str(r.get('crossFilter', '')).lower().startswith('both')]
         if both:
-            tnote.append('Krydsfilter begge retninger: ' + '; '.join(both))
-        if tr['Dashboard (indirekte)']:
-            tnote.append(f"Dashboard: {tr['Dashboard (indirekte)']}")
+            tnote.append('Cross filter both directions: ' + '; '.join(both))
+        if tr['Dashboard (indirect)']:
+            tnote.append(f"Dashboard: {tr['Dashboard (indirect)']}")
         if not t['columns'] and not t['measures']:
-            out.append('  "(ingen kolonner)" unknown')
+            out.append('  "(no columns)" unknown')
         out += ['', '  Note: ' + tq('\n'.join(x for x in tnote if x)), '}', '']
-    for g in ('Fakta', 'Bro', 'Dimension', 'Dato', 'Measures', 'Hjælpe'):
+    for g in ('Fact', 'Bridge', 'Dimension', 'Date', 'Measures', 'Helper'):
         if groups.get(g):
             out.append(f'TableGroup {dq(g)} {{')
             out += [f'  {dq(t)}' for t in groups[g]]
@@ -1090,9 +1120,9 @@ def write_dbml(parsed, cat, path, project):
               ('many', 'many'): '<>'}.get((r.get('fromCardinality', 'many'), r.get('toCardinality', 'one')), '>')
         flags = []
         if not r.get('active', True):
-            flags.append('inaktiv (USERELATIONSHIP)')
+            flags.append('inactive (USERELATIONSHIP)')
         if str(r.get('crossFilter', '')).lower().startswith('both'):
-            flags.append('krydsfilter begge retninger')
+            flags.append('cross filter both directions')
         comment = f"  // {', '.join(flags)}" if flags else ''
         out.append(f"Ref: {dq(r['from']['table'])}.{dq(r['from']['column'])} {op} "
                    f"{dq(r['to']['table'])}.{dq(r['to']['column'])}{comment}")
@@ -1111,12 +1141,14 @@ def main():
     ap.add_argument('--fence', choices=['azdo', 'github'], default='azdo')
     ap.add_argument('--parser')
     ap.add_argument('--sql', nargs='+', default=[],
-                    help='SQL-filer eller -mapper (views, INSERT ... SELECT) til Opstrøms kilde')
+                    help='SQL files or folders (views, INSERT ... SELECT) for Upstream source')
+    ap.add_argument('--no-dbml', action='store_true',
+                    help='do not write model.dbml (the dbdiagram.io data model is optional)')
     ap.add_argument('--html', action='store_true',
-                    help='skriv også lineage.html: lineage-oversigt på tabelniveau (filer → lag → model → sider)')
+                    help='also write lineage.html: table-level lineage overview (files → layers → model → pages)')
     ap.add_argument('--missing-only', action='store_true',
-                    help='skriv kun missing_descriptions.json (ingen Excel, lineage, DBML eller catalog.json) – en '
-                         'hurtig første kørsel, når AI-beskrivelserne og den fulde kørsel følger lige efter')
+                    help='only write missing_descriptions.json (no Excel, lineage, DBML or catalog.json) – a fast '
+                         'first run when AI descriptions and the full run follow right after')
     a = ap.parse_args()
 
     pbip = Path(a.pbip).resolve()
@@ -1129,20 +1161,20 @@ def main():
     cfg_path = Path(a.layout_config) if a.layout_config else out / 'layout-config.json'
     if cfg_path.is_file():
         slots = slots_from_config(json.loads(cfg_path.read_text(encoding='utf-8')))
-        slots_source = f'fra {cfg_path.name}'
+        slots_source = f'from {cfg_path.name}'
     else:
         tpl_ids = {**template_page_ids('adventureworks'), **template_page_ids('business')}
         tpl_pages = [p for p in parsed['report'].get('pages', []) if p['name'] in tpl_ids]
         page = next((p for p in parsed['report'].get('pages', []) if p['name'] == LAYOUT_PAGE_ID), None)
         if tpl_pages:
-            # pbip-layout-skabelonens sider: hvert felt på en side mærkes med sidens navn
+            # pbip-layout template pages: every field on a page is tagged with the page's name
             slots = [{'slot': tpl_ids[p['name']], 'field': fkey(r['table'], r['name']),
                       'role': ROLE_DA.get(r['role'], r['role']), 'label': v.get('title', '')}
                      for p in tpl_pages for v in p['visuals'] for r in v.get('fieldRefs', [])]
-            slots_source = 'udledt af skabelonens sider'
+            slots_source = 'derived from the template pages'
         else:
             slots = slots_from_page(page) if page else []
-            slots_source = 'udledt af dashboard-siden' if page else 'ingen pbip-layout-side fundet'
+            slots_source = 'derived from the dashboard page' if page else 'no pbip-layout page found'
 
     xlsx = out / 'catalog.xlsx'
     prev_path = Path(a.previous) if a.previous else xlsx
@@ -1150,7 +1182,7 @@ def main():
     ai = json.loads(Path(a.ai_descriptions).read_text(encoding='utf-8')) if a.ai_descriptions else {}
 
     pii_reason = getattr(parser, 'pii_reason', None) or \
-        (lambda col, table: 'navnemønster' if parser.is_pii(col) else '')
+        (lambda col, table: 'name pattern' if parser.is_pii(col) else '')
     sql = None
     if a.sql:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -1158,7 +1190,7 @@ def main():
         sql = SqlLineage().load(a.sql)
     cat = build(parsed, slots, prev, ai, pii_reason, sql)
     if a.missing_only:
-        # openpyxl (flere sekunder at importere på Windows) skal kun bruges, når der er en tidligere catalog.xlsx
+        # openpyxl (seconds to import on Windows) is only needed when there is a previous catalog.xlsx
         (out / 'missing_descriptions.json').write_text(
             json.dumps(cat['missing'], indent=2, ensure_ascii=False), encoding='utf-8')
         print(json.dumps({'project': project, 'out': str(out), 'missingOnly': True,
@@ -1171,12 +1203,13 @@ def main():
             old = json.loads(old_json.read_text(encoding='utf-8-sig'))
             cat['changes'], cat['changesSince'] = diff_catalog(old, cat), old.get('generated', '')
         except (json.JSONDecodeError, KeyError, TypeError) as e:
-            print(f'build_catalog: kunne ikke sammenligne med forrige catalog.json ({e})', file=sys.stderr)
+            print(f'build_catalog: could not compare with the previous catalog.json ({e})', file=sys.stderr)
     if xlsx.is_file():
         shutil.copy2(xlsx, out / 'catalog.backup.xlsx')
     write_excel(cat, xlsx, project, slots_source)
     write_lineage(parsed, cat, slots, out / 'lineage.md', a.fence, project)
-    write_dbml(parsed, cat, out / 'model.dbml', project)
+    if not a.no_dbml:
+        write_dbml(parsed, cat, out / 'model.dbml', project)
     html_info = None
     if a.html:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -1201,11 +1234,11 @@ def main():
         'descriptionStatus': counts, 'missingDescriptions': len(cat['missing']),
         'removedSinceLastRun': len(cat['removed']),
         'changesSinceLastRun': len(cat['changes']) if cat['changesSince'] else None,
-        'toTranslate': sum(1 for r in rows if r['Status'] == 'Bør oversættes'),
+        'toTranslate': sum(1 for r in rows if r['Status'] == 'Translate'),
         'upstream': {
-            'filled': sum(1 for r in cat['tables'] + cat['columns'] if r.get('Opstrøms kilde')),
+            'filled': sum(1 for r in cat['tables'] + cat['columns'] if r.get('Upstream source')),
             'auto': sum(1 for r in cat['tables'] + cat['columns']
-                        if r.get('Opstrøms kilde') and r.get('Opstrøms kilde') == r.get(UPSTREAM_AUTO)),
+                        if r.get('Upstream source') and r.get('Upstream source') == r.get(UPSTREAM_AUTO)),
             'of': len(cat['tables']) + len(cat['columns']),
             'sqlTargets': len(sql.tables) if sql else 0,
         },

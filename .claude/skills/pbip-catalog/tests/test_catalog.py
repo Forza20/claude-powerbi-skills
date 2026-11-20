@@ -20,7 +20,7 @@ SCRIPTS = Path(__file__).resolve().parent.parent / 'scripts'
 sys.path.insert(0, str(SCRIPTS))
 
 from sql_lineage import SqlLineage            # noqa: E402
-from build_catalog import diff_catalog, looks_english, merge_editable   # noqa: E402
+from build_catalog import diff_catalog, looks_english, merge_editable, needs_translation   # noqa: E402
 
 SQL = """
 create table gold.t1 (a int, b text);
@@ -82,31 +82,41 @@ class LanguageTests(unittest.TestCase):
                   'Account to account manager (many-to-many).']:
             self.assertTrue(looks_english(t), t)
 
-    def test_danish(self):
+    def test_danish_needs_translation(self):
         for t in ['By hvor hotellet ligger.', 'Alle ordrer uanset status.', 'Omsætning i seneste hele måned.',
                   'Kunder med mindst én Completed/Shipped-ordre.', 'Antal ordrer pr. kunde']:
             self.assertFalse(looks_english(t), t)
+            self.assertTrue(needs_translation(t), t)
 
-    def test_english_model_text_is_flagged_then_replaced_by_ai(self):
-        self.assertEqual(merge_editable('k', 'Revenue on paid lines.', {}, {})['Status'], 'Bør oversættes')
-        r = merge_editable('k', 'Revenue on paid lines.', {'k': 'Omsætning af betalte linjer.'}, {})
-        self.assertEqual((r['Status'], r['Beskrivelse']), ('AI-forslag', 'Omsætning af betalte linjer.'))
+    def test_english_needs_no_translation(self):
+        for t in ['Revenue on paid invoice lines.', 'All measures. The column is a hidden placeholder.',
+                  'Account to account manager (many-to-many).', 'Technical key.']:
+            self.assertFalse(needs_translation(t), t)
+
+    def test_english_model_text_is_kept(self):
+        r = merge_editable('k', 'Revenue on paid lines.', {}, {})
+        self.assertEqual((r['Status'], r['Description']), ('From model', 'Revenue on paid lines.'))
+
+    def test_danish_model_text_is_flagged_then_replaced_by_ai(self):
+        self.assertEqual(merge_editable('k', 'Omsætning af betalte linjer.', {}, {})['Status'], 'Translate')
+        r = merge_editable('k', 'Omsætning af betalte linjer.', {'k': 'Revenue on paid lines.'}, {})
+        self.assertEqual((r['Status'], r['Description']), ('AI suggestion', 'Revenue on paid lines.'))
 
     def test_own_edit_wins_over_translation(self):
-        prev = {'k': {'Beskrivelse': 'Min tekst', 'Status': 'Godkendt'}}
-        r = merge_editable('k', 'Revenue on paid lines.', {'k': 'AI-tekst'}, prev)
-        self.assertEqual((r['Status'], r['Beskrivelse']), ('Godkendt', 'Min tekst'))
+        prev = {'k': {'Description': 'My text', 'Status': 'Approved'}}
+        r = merge_editable('k', 'Omsætning af betalte linjer.', {'k': 'AI text'}, prev)
+        self.assertEqual((r['Status'], r['Description']), ('Approved', 'My text'))
 
 
 class DiffTests(unittest.TestCase):
     def test_new_and_changed(self):
-        old = {'tables': [], 'columns': [], 'measures': [{'Nøgle': 'm[A]', 'DAX': 'SUM(x)', 'Beskrivelse': 'a'}]}
+        old = {'tables': [], 'columns': [], 'measures': [{'Key': 'm[A]', 'DAX': 'SUM(x)', 'Description': 'a'}]}
         new = {'tables': [], 'columns': [],
-               'measures': [{'Nøgle': 'm[A]', 'DAX': 'SUM(y)', 'Beskrivelse': 'a'},
-                            {'Nøgle': 'm[B]', 'DAX': '1', 'Beskrivelse': 'b'}]}
+               'measures': [{'Key': 'm[A]', 'DAX': 'SUM(y)', 'Description': 'a'},
+                            {'Key': 'm[B]', 'DAX': '1', 'Description': 'b'}]}
         rows = diff_catalog(old, new)
-        self.assertIn(('Ændret', 'm[A]', 'DAX'), [(r['Ændring'], r['Nøgle'], r['Felt']) for r in rows])
-        self.assertIn(('Ny', 'm[B]'), [(r['Ændring'], r['Nøgle']) for r in rows])
+        self.assertIn(('Changed', 'm[A]', 'DAX'), [(r['Change'], r['Key'], r['Field']) for r in rows])
+        self.assertIn(('New', 'm[B]'), [(r['Change'], r['Key']) for r in rows])
 
 
 RUNS = os.environ.get('PBIP_CATALOG_RUNS')

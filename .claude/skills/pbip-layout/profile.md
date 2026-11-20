@@ -1,35 +1,35 @@
-# Rapportprofil
+# Report profile
 
-En profil gemmer brugerens faste valg, så de ikke skal træffes igen ved hver kørsel: farver, de faneblade
-brugeren plejer at vælge, titel, logo, navne og tekster. Eksempel: [profile.example.json](profile.example.json).
+A profile saves the user's standing choices so they are not made again on every run: colours, which pages
+they usually want, title, logo, names and texts. Example: [profile.example.json](profile.example.json).
 
 ```json
 {
-  "name": "min-stil",
+  "name": "my-style",
   "pages": ["exec", "map", "product", "customer", "tooltip"],
   "colors": { "dark": "#0B3D5C", "teal": "#F2A900", "gold": "#1C5A80" },
   "theme": true,
-  "title": "Salgsoverblik",
-  "subtitle": "Seneste hele måned",
+  "title": "Sales overview",
+  "subtitle": "Latest complete month",
   "logo": "C:\\brand\\logo.png",
   "targetGrowth": 0.1,
-  "labels": { "Measure Table[Total Profit]": "Dækningsbidrag" },
+  "labels": { "Measure Table[Total Profit]": "Gross margin" },
   "texts": { "Monthly Returns": "Monthly Customers" }
 }
 ```
 
-| Felt | Betydning | Hvis udeladt |
+| Field | Meaning | If left out |
 |---|---|---|
-| `template` | `adventureworks` eller `business` (layout-business.md) – kun et forslag; skabelonen spørges stadig | spørges |
-| `pages` | de faneblade brugeren plejer at vælge (nøgler i layout.md / layout-business.md). **Kun et forslag**: brugeren spørges stadig hver gang (SKILL.md trin 3); i pipeline-tilstand spørger orkestratoren før kørslen | alle faneblade forvalgt |
-| `colors` | farvenøgler ([colors.md](colors.md); business: layout-business.md → Farver) | skabelonens farver (*Standard*) |
-| `theme` | `false` = registrér ikke farvetemaet | registreres |
-| `title` / `subtitle` | øverst til venstre på Exec Dashboard (hvor kilderapporten har sit logo) | "Salgsoverblik" |
-| `logo` | sti til brugerens eget logo (.png/.jpg) – vises i stedet for titlen | titlen |
-| `targetGrowth` | vækst til targets, når modellen ingen har (measures.md "Targets") | spørges; skabelonen 0,1 |
-| `labels`, `texts` | viste navne for felter; erstattede titler og tekstbokse (layout.md) | modellens navne; skabelonens tekster |
+| `template` | `adventureworks` or `business` (layout-business.md) – only a suggestion; the template is still asked | asked |
+| `pages` | the pages the user usually wants (keys in layout.md / layout-business.md). **Only a suggestion**: the user is still asked every time (SKILL.md step 3); in pipeline mode the orchestrator asks before the run | all pages pre-ticked |
+| `colors` | colour keys ([colors.md](colors.md); business: layout-business.md → Colours) | the template's colours (*Standard*) |
+| `theme` | `false` = do not register the colour theme | registered |
+| `title` / `subtitle` | top-left of Exec Dashboard (where the source report has its logo) | "Sales overview" |
+| `logo` | path to the user's own logo image (.png/.jpg) – shown instead of the title | the title |
+| `targetGrowth` | growth for the targets when the model has none (measures.md "Targets") | asked; template 0.1 |
+| `labels`, `texts` | names shown for fields; replaced titles and text boxes (layout.md) | the model's names; the template's texts |
 
-Sådan bruges den:
-- `colors`, `theme`, `title`, `subtitle`, `logo`, `labels` og `texts` kopieres til config.json.
-- `pages` forvælger svarene i spørgsmålet om faneblade; det brugeren krydser af, bliver `config.pages`.
-- Profilen ændrer aldrig layoutet på et faneblad – kun hvilke faneblade der bygges, deres farver og tekster.
+How it is used:
+- `colors`, `theme`, `title`, `subtitle`, `logo`, `labels` and `texts` are copied to config.json.
+- `pages` pre-ticks the answers in the page question; what the user ticks goes into `config.pages`.
+- The profile never changes the layout of a page – only which pages are built, their colours and texts.

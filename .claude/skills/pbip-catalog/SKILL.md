@@ -1,141 +1,141 @@
 ---
 name: pbip-catalog
-description: Laver data catalog (Excel), data lineage (Markdown + Mermaid) og en datamodel til dbdiagram.io (DBML) for et Power BI PBIP-projekt, typisk lige efter pbip-layout. Felter på dashboard-siden tagges med deres plads (KPI 1, Månedskort 2 …), lineage går fra datakilde gennem Power Query-trin og DAX til visual, og godkendte beskrivelser kan skrives tilbage som `///` i TMDL. Trigger ALTID når brugeren skriver "Katalog:" efterfulgt af et projektnavn, når pbip-layout er færdig og brugeren siger ja til katalog, eller når brugeren beder om data catalog, datakatalog, lineage, dbdiagram, DBML eller dbdocs for et PBIP-projekt.
+description: Builds a data catalog (Excel), data lineage (Markdown + Mermaid) and – optionally – a data model for dbdiagram.io (DBML) for a Power BI PBIP project, typically right after pbip-layout. Fields on the dashboard page are tagged with their slot (KPI 1, Monthly card 2 …), lineage runs from the data source through Power Query steps and DAX to the visual, and approved descriptions can be written back as `///` in TMDL. ALWAYS trigger when the user writes "Catalog:" followed by a project name, when pbip-layout has finished and the user says yes to a catalog, or when the user asks for a data catalog, lineage, dbdiagram, DBML or dbdocs for a PBIP project.
 ---
 
-# PBIP Catalog – data catalog, lineage og dbdiagram.io
+# PBIP Catalog – data catalog, lineage and dbdiagram.io
 
-Arbejd på dansk med brugeren. Tabel-, kolonne- og measure-navne samt DAX/M gengives uændret.
+Work with the user in their language (English by default). Table, column and measure names and DAX/M are
+reproduced unchanged.
 
-Skillen bygger videre på den fælles parser i `skills/pbip-governance/scripts/parse_pbip.py`
-(TMDL/PBIR → JSON med Power Query-trin, kolonne-lineage og DAX-afhængigheder). Den kopieres ikke —
-`build_catalog.py` finder den selv (repo-layout, `~/.claude/skills/`, `/mnt/skills/user/`, eller
-`--parser` / `PBIP_PARSER`). Format og kolonner er beskrevet i [format.md](format.md).
+The skill builds on the shared parser in `pbip-governance/scripts/parse_pbip.py` (TMDL/PBIR → JSON with
+Power Query steps, column lineage and DAX dependencies). It is not copied – `build_catalog.py` finds it
+itself (repo layout, `.claude/skills/`, `~/.claude/skills/`, `/mnt/skills/user/`, or `--parser` /
+`PBIP_PARSER`). Format and columns are described in [format.md](format.md).
 
-## Leverancer (i `<projekt>/docs/`)
-| Fil | Indhold |
+## Deliverables (in `<project>/docs/`)
+| File | Content |
 |---|---|
-| `catalog.xlsx` | Faner: Oversigt, Tabeller, Kolonner, Measures, Dashboard, Relationer, Kilder (+ Fjernet). Turkise kolonner er til redigering. |
-| `lineage.md` | Mermaid: overblik på tabelniveau, én graf pr. dashboard-plads, kolonne-lineage pr. tabel. AzDO-wiki-kompatibel (`::: mermaid`). |
-| `model.dbml` | Datamodellen til dbdiagram.io / dbdocs.io med beskrivelser, DAX og dashboard-pladser i noter. |
-| `catalog.json` | Maskinlæsbar version (pipeline-handoff og diff mellem kørsler). |
-| `missing_descriptions.json` | Felter uden beskrivelse + kontekst, til AI-forslag. |
-| `lineage.html` | **Tilvalg** (`--html`): lineage på tabelniveau som én HTML-side. Kolonnerne er lagene filer → bronze/silver/gold → Power Query → Power BI-tabeller → rapportsider. Tabeller, der ikke bruges videre, har stiplet rød kant, og et klik fremhæver hele vejen. Se [format.md](format.md). |
+| `catalog.xlsx` | Sheets: Overview, Tables, Columns, Measures, Dashboard, Relationships, Sources (+ Removed, Changes). Teal columns are for editing. |
+| `lineage.md` | Mermaid: table-level overview, one graph per dashboard slot, column lineage per table. Azure DevOps wiki compatible (`::: mermaid`). |
+| `model.dbml` | **Optional** (skip with `--no-dbml`): the data model for dbdiagram.io / dbdocs.io with descriptions, DAX and dashboard slots in notes. |
+| `catalog.json` | Machine-readable version (pipeline hand-off and diff between runs). |
+| `missing_descriptions.json` | Fields without a description + context, for AI suggestions. |
+| `lineage.html` | **Optional** (`--html`): table-level lineage as one HTML page. The columns are the layers files → bronze/silver/gold → Power Query → Power BI tables → report pages. Tables that are not used further have a dashed red border, and a click highlights the whole path. See [format.md](format.md). |
 
-## Forudsætninger
-- **Skill'en `pbip-governance` skal være installeret** (den indeholder `scripts/parse_pbip.py`, som denne
-  skill ikke kan køre uden). Uden den stopper `build_catalog.py` med "Fandt ikke
-  pbip-governance/scripts/parse_pbip.py": installér den ved siden af denne skill, eller angiv `--parser` /
-  `PBIP_PARSER`. `pbip-layout` er valgfri (dens `docs/layout-config.json` tilføjer kun dashboard-tags).
-- Python 3 med `openpyxl`. Kommandoerne nedenfor skriver `python3`. På Windows hedder den ofte
-  `python` eller `py`, og `python3` åbner måske Microsoft Store. Tjek én gang med `python --version`, og
-  brug den kommando, der virker, i hele kørslen.
-- PBIP i TMDL-format (`<Navn>.SemanticModel/definition/`). `model.bim` kan katalogiseres, men
-  tilbageskrivning kræver TMDL. Er det en .pbix: bed om Filer → Gem som → *.pbip, og stop.
-- Dashboard-tagging: `docs/layout-config.json` fra pbip-layout. Med rapportskabelonen (`template`,
-  `pages`, `fields`) mærkes hvert koblet felt med de faneblade, der bruger det (Exec Dashboard, Product
-  Detail …; template.json siger hvilke). Uden filen mærkes felterne på skabelonens faneblade (faste id'er)
-  med fanebladets navn; et ældre enkeltsidet layout (`8d1e4c7a2b5f9e3d6c10`, config med `kpis`) giver
-  stadig sine pladser (KPI 1 …). Ellers laves kataloget uden dashboard-tags — sig det til brugeren.
+## Prerequisites
+- **The `pbip-governance` skill must be installed** (it holds `scripts/parse_pbip.py`, which this skill
+  cannot run without). Without it `build_catalog.py` stops with "Could not find
+  pbip-governance/scripts/parse_pbip.py": install it next to this skill, or pass `--parser` / `PBIP_PARSER`.
+  `pbip-layout` is optional (its `docs/layout-config.json` only adds dashboard tags).
+- Python 3 with `openpyxl`. The commands below say `python3`. On Windows it is often `python` or `py`, and
+  `python3` may open the Microsoft Store. Check once with `python --version` (or use the full path) and use
+  the command that works for the whole run.
+- PBIP in TMDL format (`<Name>.SemanticModel/definition/`). `model.bim` can be catalogued, but write-back
+  needs TMDL. If it is a .pbix: ask for File → Save as → *.pbip, and stop.
+- Dashboard tagging: `docs/layout-config.json` from pbip-layout. With its report template (`template`,
+  `pages`, `fields`) every mapped field is tagged with the pages that use it (Exec Dashboard, Product
+  Detail …; template.json says which). Without the file, fields on the template's pages (their fixed ids)
+  are tagged with the page; an older single-page layout (`8d1e4c7a2b5f9e3d6c10`, config with `kpis`) still
+  gives its slots (KPI 1 …). Otherwise the catalog is built without dashboard tags – tell the user.
 
-## Arbejdsgang
+## Workflow
 
-1. **Find projektet.** Brug stien fra pbip-layout, den uploadede mappe eller søg efter `*.pbip`.
-   Output-mappen er `<projekt>/docs/`. Findes `catalog.xlsx` dér (eller uploader brugeren en
-   rettet version), er det forrige kørsel — den læses og flettes, aldrig overskrives blindt
-   (der laves også `catalog.backup.xlsx`).
+1. **Find the project.** Use the path from pbip-layout, the uploaded folder or search for `*.pbip`. The
+   output folder is `<project>/docs/`. If `catalog.xlsx` exists there (or the user uploads an edited
+   version), it is the previous run – it is read and merged, never overwritten blindly (a
+   `catalog.backup.xlsx` is made too).
 
-2. **Første kørsel.**
+2. **First run.**
    ```
-   python3 "<skill-mappe>/scripts/build_catalog.py" "<projekt>" [--previous "<rettet catalog.xlsx>"] [--sql <mappe> ...]
+   python3 "<skill folder>/scripts/build_catalog.py" "<project>" [--previous "<edited catalog.xlsx>"] [--sql <folder> ...] [--no-dbml]
    ```
-   **Opstrøms kilde** udfyldes automatisk ud fra Power Query (fil › ark › kolonne,
-   schema.tabel.kolonne, surrogatnøgler, beregnede kolonner, faste lister). Læser modellen fra en
-   database, så led efter SQL der bygger tabellerne i repoet/uploaden (fx `supabase/migrations/`,
-   `sql/`, `models/`, `*.sql` med `CREATE VIEW` eller `INSERT INTO … SELECT`) og giv mapperne med
-   `--sql`. Så følges kolonnen videre gennem lagene, fx
-   `silver.erp_loc_a101.cntry ← bronze.erp_loc_a101.cntry (afledt: case …)`. Nævn hvilke SQL-mapper
-   der blev brugt, eller at ingen blev fundet. Tekst brugeren selv har skrevet i Opstrøms kilde
-   overskrives aldrig.
-   Brug `--fence github` hvis lineage.md skal vises på GitHub i stedet for Azure DevOps-wiki.
-   Tilføj `--html`, hvis brugeren har bedt om lineage-oversigten som HTML (`docs/lineage.html`).
-   Ellers tilbydes den i trin 4.
-   **Hurtig vej** (pipeline-kørsler, eller når trin 3 følger lige efter): tilføj `--missing-only`. Den skriver
-   kun `missing_descriptions.json` – ingen Excel, lineage, DBML eller catalog.json, og openpyxl importeres
-   kun, hvis der findes en tidligere catalog.xlsx – så hele outputtet skrives én gang, af kørslen i trin 3
-   (med `--html` og de øvrige flag der).
-   Scriptet skriver en JSON-opsummering: antal, beskrivelsesstatus, fjernede felter, ændringer siden
-   sidste kørsel (`changesSinceLastRun`) og engelske beskrivelser, der skal oversættes (`toTranslate`).
-   Ændringerne står på fanen **Ændringer**, så en ny version kan gennemgås uden at læse hele kataloget.
+   **Upstream source** is filled automatically from Power Query (file › sheet › column, schema.table.column,
+   surrogate keys, calculated columns, fixed lists). If the model reads from a database, look for SQL that
+   builds the tables in the repo/upload (e.g. `supabase/migrations/`, `sql/`, `models/`, `*.sql` with
+   `CREATE VIEW` or `INSERT INTO … SELECT`) and pass the folders with `--sql`. The column is then followed
+   through the layers, e.g. `silver.erp_loc_a101.cntry ← bronze.erp_loc_a101.cntry (derived: case …)`. Say
+   which SQL folders were used, or that none was found. Text the user wrote in Upstream source is never
+   overwritten.
+   Use `--fence github` if lineage.md is shown on GitHub instead of an Azure DevOps wiki. Add `--html` if the
+   user asked for the lineage overview as HTML (`docs/lineage.html`); otherwise it is offered in step 4. Add
+   `--no-dbml` if the user does not want the dbdiagram.io model.
+   **Fast path** (pipeline runs, or whenever step 3 follows at once): add `--missing-only`. It writes only
+   `missing_descriptions.json` – no Excel, lineage, DBML or catalog.json, and no openpyxl import unless a
+   previous catalog.xlsx exists – so the full output is written once, by the run in step 3 (with `--html`
+   and the other flags there).
+   The script prints a JSON summary: counts, description status, removed fields, changes since the last run
+   (`changesSinceLastRun`) and model descriptions that need translating (`toTranslate`). The changes are on
+   the **Changes** sheet, so a new version can be reviewed without reading the whole catalog.
 
-3. **AI-forslag til manglende beskrivelser.** Læs `docs/missing_descriptions.json` og skriv
-   `docs/ai_descriptions.json` som `{ "<Nøgle>": "<beskrivelse>" }`. Regler:
-   - 1–2 sætninger på dansk forretningssprog: hvad tallet/feltet betyder, enhed, filtre og
-     tidslogik (fx "seneste hele måned"). Brug konteksten (DAX, oprindelse, Power Query-trin,
-     dashboard-plads) — opfind ikke forretningsregler der ikke står i koden.
-   - **Nøgler beskrives altid** ud fra relationerne – lad dem ikke stå som Mangler:
-     - surrogatnøgle (`*_key` på 1-siden): "Teknisk nøgle for <dimension> (genereret i gold); bruges kun til
-       relationer – vis den ikke i rapporter."
-     - fremmednøgle (`*_key` på mange-siden): "Kobler <fakta/bro> til <dimension>[<nøgle>]; teknisk felt."
-     - forretningsnøgle (`*_id`, `*_no`): "Kildesystemets id for <emne> (fx GST-0001); bruges til opslag
-       og afstemning mod kilden."
-     - pladsholder i measure-tabellen: "Skjult pladsholder – gør `_Measures` til en tabel; ingen data."
-   - Andre tekniske hjælpefelter springes kun over, hvis der ikke kan siges noget meningsfuldt (lad dem stå
-     som Mangler).
-   - Prioritér felter med dashboard-plads, derefter measures, derefter synlige kolonner.
-   - **Oversættelse:** rækker med `"translate"` har en engelsk `///`-beskrivelse fra modellen
-     (status *Bør oversættes*). Skriv den på dansk med samme indhold. Tilføj ikke noget, og udelad
-     ikke noget. Beslutningsnumre (R2-6), statusværdier (Completed) og feltnavne gengives uændret.
-     Den danske tekst erstatter den engelske i kataloget som *AI-forslag*. Først når brugeren sætter
-     Godkendt og kører trin 5, ændres modellen.
-   Kør derefter igen:
+3. **AI suggestions for missing descriptions.** Read `docs/missing_descriptions.json` and write
+   `docs/ai_descriptions.json` as `{ "<Key>": "<description>" }`. Rules:
+   - 1–2 sentences of plain business English: what the number/field means, unit, filters and time logic
+     (e.g. "latest complete month"). Use the context (DAX, origin, Power Query steps, dashboard slot) – do not
+     invent business rules that are not in the code.
+   - **Keys are always described** from the relationships – never leave them Missing:
+     - surrogate key (`*_key` on the one side): "Technical key for <dimension> (generated in gold); used only
+       for relationships – do not show it in reports."
+     - foreign key (`*_key` on the many side): "Connects <fact/bridge> to <dimension>[<key>]; technical field."
+     - business key (`*_id`, `*_no`): "The source system's id for <subject> (e.g. GST-0001); used for lookups
+       and reconciliation with the source."
+     - placeholder in the measure table: "Hidden placeholder – makes `_Measures` a table; no data."
+   - Other technical helper fields are skipped only if nothing meaningful can be said (leave them Missing).
+   - Prioritise fields with a dashboard slot, then measures, then visible columns.
+   - **Translation:** rows with `"translate"` have a model `///` description in another language (status
+     *Translate*). Write it in English with the same content. Add nothing and leave nothing out. Decision ids
+     (R2-6), status values (Completed) and field names are kept unchanged. The English text replaces the
+     original in the catalog as an *AI suggestion*. Only when the user sets Approved and runs step 5 is the
+     model changed.
+   Then run again:
    ```
-   python3 "<skill-mappe>/scripts/build_catalog.py" "<projekt>" --ai-descriptions "<projekt>/docs/ai_descriptions.json"
+   python3 "<skill folder>/scripts/build_catalog.py" "<project>" --ai-descriptions "<project>/docs/ai_descriptions.json"
    ```
-   Præcedens: rettelser i Excel > TMDL `///` > AI-forslag. Et AI-forslag overskriver aldrig noget,
-   undtagen en engelsk TMDL-beskrivelse med status *Bør oversættes*.
+   Precedence: edits in Excel > TMDL `///` > AI suggestion. An AI suggestion never overwrites anything,
+   except a non-English TMDL description with status *Translate*.
 
-4. **Afrapportér og spørg om næste skridt** (AskUserQuestion, multi-select):
-   - "Jeg retter/godkender beskrivelser i Excel" → bed om den rettede `catalog.xlsx` tilbage og gå til trin 5.
-   - "Lineage-oversigt som HTML" → kør `build_catalog.py` igen med de samme argumenter plus `--html`.
-     Fortæl brugeren, at `docs/lineage.html` åbner i en almindelig browser. Kan sessionen udgive
-     sider (Artifact-værktøjet), så tilbyd også at udgive den som privat side.
-   - "Publicér på dbdocs.io" → trin 6.
-   - "Færdig".
-   Vis kort: antal tabeller/kolonner/measures, dashboard-felter, beskrivelsesstatus,
-   mulige PII-kolonner, og hvordan man åbner `model.dbml` i dbdiagram.io
-   (dbdiagram.io → Create diagram → indsæt indholdet af `model.dbml`, eller Import → DBML).
+4. **Report and ask about next steps** (AskUserQuestion, multi-select):
+   - "I will edit/approve descriptions in Excel" → ask for the edited `catalog.xlsx` back and go to step 5.
+   - "Lineage overview as HTML" → run `build_catalog.py` again with the same arguments plus `--html`. Tell
+     the user that `docs/lineage.html` opens in an ordinary browser. If the session can publish pages (the
+     Artifact tool), offer to publish it as a private page as well.
+   - "Publish on dbdocs.io" → step 6 (only when `model.dbml` was written).
+   - "Done".
+   Show briefly: number of tables/columns/measures, dashboard fields, description status, possible PII
+   columns, and – when `model.dbml` exists – how to open it in dbdiagram.io (dbdiagram.io → Create diagram →
+   paste the content of `model.dbml`, or Import → DBML).
 
-5. **Tilbageskrivning til TMDL (særskilt step, kræver godkendelse).**
-   - Kør altid tørkørsel først og vis diff'en:
+5. **Write-back to TMDL (separate step, needs approval).**
+   - Always do a dry run first and show the diff:
      ```
-     python3 "<skill-mappe>/scripts/writeback_descriptions.py" "<projekt>" "<catalog.xlsx>"
+     python3 "<skill folder>/scripts/writeback_descriptions.py" "<project>" "<catalog.xlsx>"
      ```
-   - Kun rækker med **Status = Godkendt** skrives. Kun `///`-linjer ændres — aldrig DAX, M eller properties.
-   - Spørg med AskUserQuestion om diff'en må skrives. Bed brugeren lukke projektet i Power BI
-     Desktop først (ellers kan Desktop overskrive filerne).
-   - Ved ja: kør igen med `--apply`, og kør derefter `build_catalog.py` igen, så kataloget viser
-     beskrivelserne som skrevet til modellen.
+   - Only rows with **Status = Approved** are written. Only `///` lines change – never DAX, M or properties.
+   - Ask with AskUserQuestion whether the diff may be written. Ask the user to close the project in Power BI
+     Desktop first (otherwise Desktop may overwrite the files).
+   - On yes: run again with `--apply`, then run `build_catalog.py` again, so the catalog shows the
+     descriptions as written to the model.
 
-6. **dbdocs.io (valgfrit — kun på udtrykkelig besked).** Udgiver en hostet side med ER-diagram og
-   søgbart katalog ud fra `model.dbml`:
+6. **dbdocs.io (optional – only on explicit request).** Publishes a hosted page with an ER diagram and a
+   searchable catalog from `model.dbml`:
    ```
    npm install -g dbdocs
-   dbdocs login                      # eller sæt DBDOCS_TOKEN (dbdocs token -g)
-   dbdocs build "<projekt>/docs/model.dbml" --project "<projektnavn>"
-   dbdocs password --set "<kode>" --project "<projektnavn>"   # hvis siden skal være beskyttet
+   dbdocs login                      # or set DBDOCS_TOKEN (dbdocs token -g)
+   dbdocs build "<project>/docs/model.dbml" --project "<project name>"
+   dbdocs password --set "<password>" --project "<project name>"   # if the page must be protected
    ```
-   Kræver netadgang og en dbdocs-konto. Fejler det, lever filerne og forklar hvordan brugeren selv kører kommandoen.
+   Needs network access and a dbdocs account. If it fails, deliver the files and explain how the user can run
+   the command themselves.
 
-## Faste regler
-- Ret aldrig DAX, Power Query eller rapportfiler. Eneste skrivning i projektet er `///`-linjer i trin 5 efter godkendelse.
-- PII-markeringen er en navneheuristik: skriv "mulig PII", aldrig "er PII".
-- Udgiv aldrig til dbdocs eller andre tjenester uden udtrykkelig besked.
-- Gentag forbehold: statisk analyse; kolonne-lineage gennem Power Query er regex-baseret
-  (komplekse M-udtryk, `Table.Combine` med flere kilder og custom-funktioner følges kun delvist);
-  SQL-lineagen (`sql_lineage.py`) er også regex-baseret. Den følger CTE'er, temp-tabeller og
-  underforespørgsler i udtryk, men ikke dynamisk SQL, dbt-Jinja og `MERGE`/`UPDATE`. Så stopper
-  Opstrøms kilde ved det sidste led, der kunne læses.
-- Efter ændringer i scripts: kør testene,
-  `python -m unittest discover -s "<skill-mappe>/tests"`. Sæt `PBIP_CATALOG_RUNS` til en mappe med
-  pipeline-kørsler, så testene også tjekker dækningen på rigtige data.
+## Fixed rules
+- Never change DAX, Power Query or report files. The only write in the project is `///` lines in step 5 after
+  approval.
+- The PII flag is a name heuristic: write "possible PII", never "is PII".
+- Never publish to dbdocs or other services without an explicit request.
+- Repeat the caveats: static analysis; column lineage through Power Query is regex-based (complex M
+  expressions, `Table.Combine` with several sources and custom functions are followed only partly); the SQL
+  lineage (`sql_lineage.py`) is regex-based too. It follows CTEs, temp tables and subqueries in expressions,
+  but not dynamic SQL, dbt Jinja and `MERGE`/`UPDATE`, nor `select alias.*` passthrough. Upstream source then
+  stops at the last step that could be read.
+- After changing the scripts: run the tests, `python -m unittest discover -s "<skill folder>/tests"`. Set
+  `PBIP_CATALOG_RUNS` to a folder with pipeline runs, so the tests also check coverage on real data.
