@@ -10,7 +10,7 @@
   "decomp",
   "influencers"
  ],
- "title": "Salgsoverblik",
+ "title": "Sales overview",
  "subtitle": "Dataset",
  "fields": {
   "Calendar Lookup[Date Hierarchy.Date]": "dim_date[date]",

@@ -5,7 +5,7 @@ writeback_descriptions.py - Write approved catalog descriptions back to TMDL as 
 Usage:
     python3 writeback_descriptions.py <pbip-folder> <catalog.xlsx> [--apply]
 
-Only rows on the sheets Tabeller / Kolonner / Measures with Status = "Godkendt" and a
+Only rows on the sheets Tabeller / Kolonner / Measures with Status = "Approved" and a
 non-empty Beskrivelse are written. Without --apply the script only shows what would
 change (dry run). Only `///` description lines are touched - never DAX, M or properties.
 Close the project in Power BI Desktop before --apply, or Desktop may overwrite the files.
@@ -43,7 +43,7 @@ def split_decl(line):
 
 
 def parse_key(key, sheet):
-    if sheet == 'Tabeller':
+    if sheet == 'Tables':
         return key, None
     m = re.match(r'^(.+?)\[(.+)\]$', key)
     return (m.group(1), m.group(2)) if m else (None, None)
@@ -53,17 +53,17 @@ def load_approved(xlsx):
     from openpyxl import load_workbook
     wb = load_workbook(xlsx, read_only=True, data_only=True)
     out = []
-    for sheet, kind in (('Tabeller', 'table'), ('Kolonner', 'column'), ('Measures', 'measure')):
+    for sheet, kind in (('Tables', 'table'), ('Columns', 'column'), ('Measures', 'measure')):
         if sheet not in wb.sheetnames:
             continue
         rows = list(wb[sheet].iter_rows(values_only=True))
         head = [str(h or '') for h in rows[0]] if rows else []
-        if not {'Nøgle', 'Beskrivelse', 'Status'} <= set(head):
+        if not {'Key', 'Description', 'Status'} <= set(head):
             continue
         ix = {h: i for i, h in enumerate(head)}
         for r in rows[1:]:
-            key, desc, status = r[ix['Nøgle']], r[ix['Beskrivelse']], r[ix['Status']]
-            if key and desc and str(status).strip() == 'Godkendt':
+            key, desc, status = r[ix['Key']], r[ix['Description']], r[ix['Status']]
+            if key and desc and str(status).strip() == 'Approved':
                 table, name = parse_key(str(key), sheet)
                 if table:
                     out.append({'kind': kind, 'table': table, 'name': name or table,
@@ -94,7 +94,7 @@ def apply_to_text(text, items):
                 target = i
                 break
         if target is None:
-            changed.append((it, 'ikke fundet'))
+            changed.append((it, 'not found'))
             continue
         indent = split_decl(lines[target])[0]
         start = target
@@ -103,10 +103,10 @@ def apply_to_text(text, items):
         new_desc = [f'{indent}/// {l.strip()}'.rstrip() for l in it['description'].splitlines() if l.strip()]
         old_desc = lines[start:target]
         if [l.strip() for l in old_desc] == [l.strip() for l in new_desc]:
-            changed.append((it, 'uændret'))
+            changed.append((it, 'unchanged'))
             continue
         lines[start:target] = new_desc
-        changed.append((it, 'opdateret' if old_desc else 'tilføjet'))
+        changed.append((it, 'updated' if old_desc else 'added'))
     return nl.join(lines), changed
 
 
@@ -120,11 +120,11 @@ def main():
     sm = next(Path(a.pbip).glob('*.SemanticModel'), None)
     tables_dir = sm / 'definition' / 'tables' if sm else None
     if not tables_dir or not tables_dir.is_dir():
-        sys.exit('Fandt ikke <navn>.SemanticModel/definition/tables (kun TMDL-format understøttes).')
+        sys.exit('Could not find <name>.SemanticModel/definition/tables (only the TMDL format is supported).')
 
     approved = load_approved(a.catalog)
     if not approved:
-        print('Ingen rækker med Status = Godkendt. Intet at skrive.')
+        print('No rows with Status = Approved. Nothing to write.')
         return
     by_file, missing = {}, []
     for it in approved:
@@ -134,13 +134,13 @@ def main():
         else:
             missing.append(it)
 
-    summary = {'tilføjet': 0, 'opdateret': 0, 'uændret': 0, 'ikke fundet': len(missing)}
+    summary = {'added': 0, 'updated': 0, 'unchanged': 0, 'not found': len(missing)}
     for f, items in by_file.items():
         old = f.read_text(encoding='utf-8')
         new, changes = apply_to_text(old, items)
         for it, what in changes:
             summary[what] += 1
-            if what == 'ikke fundet':
+            if what == 'not found':
                 missing.append(it)
         if new != old:
             diff = difflib.unified_diff(old.splitlines(), new.splitlines(),
@@ -150,9 +150,9 @@ def main():
                 f.write_text(new, encoding='utf-8', newline='')
     for it in missing:
         print(f"! Ikke fundet i TMDL: {it['kind']} {it['table']}[{it['name']}]")
-    mode = 'SKREVET' if a.apply else 'TØRKØRSEL (brug --apply for at skrive)'
-    print(f"\n{mode}: {summary['tilføjet']} tilføjet, {summary['opdateret']} opdateret, "
-          f"{summary['uændret']} uændret, {summary['ikke fundet']} ikke fundet.")
+    mode = 'WRITTEN' if a.apply else 'DRY RUN (use --apply to write)'
+    print(f"\n{mode}: {summary['added']} added, {summary['updated']} updated, "
+          f"{summary['unchanged']} unchanged, {summary['not found']} not found.")
 
 
 if __name__ == '__main__':

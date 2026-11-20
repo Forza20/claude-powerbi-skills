@@ -1,112 +1,113 @@
-# Format: catalog.xlsx, lineage.md og model.dbml
+# Format: catalog.xlsx, lineage.md and model.dbml
 
-## Nøgler
-| Type | Nøgle | Eksempel |
+## Keys
+| Type | Key | Example |
 |---|---|---|
-| Tabel | `<tabel>` | `fact_sales` |
-| Kolonne | `<tabel>[<kolonne>]` | `fact_sales[order_date]` |
-| Measure | `<tabel>[<measure>]` | `_Measures[Omsætning]` |
+| Table | `<table>` | `fact_sales` |
+| Column | `<table>[<column>]` | `fact_sales[order_date]` |
+| Measure | `<table>[<measure>]` | `_Measures[Revenue]` |
 
-Samme format som felterne i pbip-layouts `config.json`. Nøglen bruges til at flette rettelser
-mellem kørsler — omdøbes et felt i modellen, havner den gamle række på fanen **Fjernet**, så
-beskrivelsen ikke forsvinder i stilhed.
+The same format as the fields in pbip-layout's `config.json`. The key is used to merge edits between runs –
+if a field is renamed in the model, the old row lands on the **Removed** sheet, so the description does not
+disappear silently.
 
-## Redigerbare kolonner (turkise)
-| Kolonne | Brug |
+## Editable columns (teal)
+| Column | Use |
 |---|---|
-| Beskrivelse | Forretningsbeskrivelse. Skrives tilbage som `///` når Status = Godkendt. |
-| Ejer | Dataejer / ansvarlig. |
-| Følsomhed | Fx Offentlig, Intern, Fortrolig, PII. Forudfyldes "Mulig PII - vurdér" ud fra kolonnenavn – ikke for en kolonne med `annotation PII = not personal` i TMDL (gennemgået; "Mulig PII" siger så "Nej (gennemgået: ikke persondata)"). |
-| Opstrøms kilde | Hvor data kommer fra før Power BI. Udfyldes automatisk (se nedenfor); egen tekst bevares. |
-| Status | `Mangler` · `Bør oversættes` · `AI-forslag` · `Fra model` · `Redigeret` · `Godkendt` |
+| Description | Business description. Written back as `///` when Status = Approved. |
+| Owner | Data owner / responsible person. |
+| Sensitivity | E.g. Public, Internal, Confidential, PII. Pre-filled "Possible PII - assess" from the column name – not for a column with `annotation PII = not personal` in TMDL (reviewed; "Possible PII" then says "No (reviewed: not personal)"). |
+| Upstream source | Where the data comes from before Power BI. Filled automatically (see below); your own text is kept. |
+| Status | `Missing` · `Translate` · `AI suggestion` · `From model` · `Edited` · `Approved` |
 
-`Beskrivelseskilde` (Excel / TMDL / AI) viser hvor teksten kom fra i denne kørsel.
+`Description source` (Excel / TMDL / AI) shows where the text came from in this run.
 
-### Opstrøms kilde (automatisk)
-| Oprindelse | Eksempel på tekst |
+### Upstream source (automatic)
+| Origin | Example text |
 |---|---|
-| Fil (Excel/CSV) | `Silver_Excel.xlsx › CUST_MASTER › CustomerName` (append af flere ark: `ORDERS_2025 + ORDERS_2026`) |
-| Database uden SQL | `gold.dim_customers.country (PostgreSQL)` |
-| Database med `--sql` | `silver.erp_loc_a101.cntry ← bronze.erp_loc_a101.cntry (afledt: case when …)` |
-| Surrogatnøgle | `Surrogatnøgle genereret i Power Query` / `Surrogatnøgle fra dim_customer (genereret i Power Query)` |
-| Beregnet i Power Query | `Beregnet i Power Query (fact_sales): Number.Round([Quantity] * [UnitPrice], 2)` |
-| Fast liste (`#table`) | `Fast liste i Power Query` / `Opslag i fast liste i Power Query (dim_channel)` |
-| Beregnet kolonne (DAX) | `Beregnet kolonne (DAX) i Power BI` |
+| File (Excel/CSV) | `Silver_Excel.xlsx › CUST_MASTER › CustomerName` (append of several sheets: `ORDERS_2025 + ORDERS_2026`) |
+| Database without SQL | `gold.dim_customers.country (PostgreSQL)` |
+| Database with `--sql` | `silver.erp_loc_a101.cntry ← bronze.erp_loc_a101.cntry (derived: case when …)` |
+| Surrogate key | `Surrogate key generated in Power Query` / `Surrogate key from dim_customer (generated in Power Query)` |
+| Calculated in Power Query | `Calculated in Power Query (fact_sales): Number.Round([Quantity] * [UnitPrice], 2)` |
+| Fixed list (`#table`) | `Fixed list in Power Query` / `Lookup in fixed list in Power Query (dim_channel)` |
+| Calculated column (DAX) | `Calculated column (DAX) in Power BI` |
 
-Tabeller får kildefil og ark (`Silver_Excel.xlsx › products, subcategories`), SQL-lagene
-(`silver.crm_prd_info, silver.erp_px_cat_g1v2 ← bronze.… (filter: …)`), eller for brotabeller de
-ark rækkerne kommer fra (`… › campaign_skus (nøgler slået op i dim_campaign, dim_product)`).
+Tables get the source file and sheet (`Silver_Excel.xlsx › products, subcategories`), the SQL layers
+(`silver.crm_prd_info, silver.erp_px_cat_g1v2 ← bronze.… (filter: …)`), or for bridge tables the sheets the
+rows come from (`… › campaign_skus (keys looked up in dim_campaign, dim_product)`).
 
-Kolonnen **Opstrøms kilde (auto)** gemmer den automatiske tekst fra kørslen. Ved næste kørsel
-opdateres Opstrøms kilde kun, hvis den er tom eller stadig er lig med den sidste automatiske
-tekst — har du skrevet noget selv, bevares det.
+The column **Upstream source (auto)** keeps the automatic text of the run. On the next run, Upstream source is
+updated only if it is empty or still equals the last automatic text – if you wrote something yourself, it is kept.
 
-### Status-livscyklus
+### Status life cycle
 ```
-Mangler ──AI-forslag──► AI-forslag ──bruger retter──► Redigeret ──► Godkendt ──writeback──► (TMDL ///)
-          TMDL ///  ──► Fra model ───────────────────────────────► Godkendt
+Missing ──AI suggestion──► AI suggestion ──user edits──► Edited ──► Approved ──writeback──► (TMDL ///)
+          TMDL ///  ──► From model ──────────────────────────────► Approved
 ```
-Præcedens ved hver kørsel: tekst i Excel (status ≠ Fra model / Bør oversættes) > TMDL `///` > AI-forslag.
-Rækker med `Fra model` følger altid modellen, så ændringer i TMDL slår igennem.
+Precedence on every run: text in Excel (status ≠ From model / Translate) > TMDL `///` > AI suggestion. Rows
+with `From model` always follow the model, so changes in TMDL come through.
 
-**Bør oversættes**: TMDL-beskrivelsen er på engelsk. Det afgøres af en ordtælling (`looks_english`)
-af engelske og danske småord og ord med æ/ø/å. Rækken kommer med i `missing_descriptions.json` med
-feltet `translate`. Et AI-forslag på dansk erstatter den engelske tekst (status `AI-forslag`,
-kilde `AI (oversat fra TMDL)`). Først writeback af en godkendt række ændrer modellen.
+**Translate**: the TMDL description is not in English. This is decided by a word count (`needs_translation`)
+of English and Danish function words and words with æ/ø/å. The row is added to `missing_descriptions.json`
+with the field `translate`. An English AI suggestion replaces the original text (status `AI suggestion`,
+source `AI (translated from TMDL)`). Only the write-back of an approved row changes the model.
 
-## Faner
-- **Oversigt** – antal, beskrivelsesstatus, kilde til dashboard-pladser, vejledning.
-- **Tabeller** – type (Fakta/Dimension/Dato/Bro/Measures/Hjælpe), kilde, kildeobjekter, opstrøms queries, lagring.
-- **Kolonner** – datatype, nøglefelt, beregnet, mulig PII, oprindelse (kildeobjekt.kolonne), Power Query-trin, DAX.
-- **Measures** – DAX, direkte afhængigheder, alle kildekolonner (transitivt), bruges af.
-- **Dashboard** – én række pr. felt pr. plads på pbip-layout-siden (KPI 1–4, Trend, Månedskort 1–3, Søjler, Top 10-tabel, Fremhævning 1–2).
-- **Relationer** – kardinalitet, krydsfilter, aktiv/inaktiv.
-- **Kilder** – datakilder, parametre og delte Power Query-queries.
-- **Ændringer** – nye og ændrede felter siden forrige `catalog.json` i samme `docs/`-mappe. Kolonner:
-  Ændring (Ny/Ændret), Ark, Nøgle, Felt, Før, Efter. Disse felter sammenlignes: tabeller (Type,
-  Kildeobjekter, Beskrivelse, Status), kolonner (Datatype, Format, Skjult, Oprindelse, Opstrøms
-  kilde (auto), Beskrivelse, Status) og measures (DAX, Format, Mappe, Skjult, Beskrivelse, Status).
-  Fanen findes kun, når der er ændringer.
-- **Fjernet** – felter fra forrige katalog der ikke findes længere.
+## Sheets
+- **Overview** – counts, description status, source of the dashboard slots, instructions.
+- **Tables** – type (Fact/Dimension/Date/Bridge/Measures/Helper), source, source objects, upstream queries, storage.
+- **Columns** – data type, key field, calculated, possible PII, origin (source object.column), Power Query steps, DAX.
+- **Measures** – DAX, direct dependencies, all source columns (transitively), used by.
+- **Dashboard** – one row per field per page of the pbip-layout template (Exec Dashboard, Product Detail …), or per slot of the older single-page layout (KPI 1–4, Trend, Monthly card 1–3, Bars
+  per category, Top 10 table, Highlight 1–2).
+- **Relationships** – cardinality, cross filter, active/inactive.
+- **Sources** – data sources, parameters and shared Power Query queries.
+- **Changes** – new and changed fields since the previous `catalog.json` in the same `docs/` folder. Columns:
+  Change (New/Changed), Sheet, Key, Field, Before, After. These fields are compared: tables (Type, Source
+  objects, Description, Status), columns (Data type, Format, Hidden, Origin, Upstream source (auto),
+  Description, Status) and measures (DAX, Format, Folder, Hidden, Description, Status). The sheet exists only
+  when there are changes.
+- **Removed** – fields from the previous catalog that no longer exist.
 
-Kolonnerne `Dashboard-plads` (direkte binding på visual) og `Dashboard (indirekte)` (indgår via
-measure-afhængigheder) gør det muligt at filtrere på alt der påvirker dashboardet.
+The columns `Dashboard slot` (bound directly to a visual) and `Dashboard (indirect)` (part of it through measure
+dependencies) make it possible to filter on everything that affects the dashboard.
 
 ## lineage.md
-1. **Overblik** – datakilde → delte queries → tabeller → rapportsider.
-2. **Dashboard-pladser** – én graf pr. plads: plads ← measure ← afhængige measures ← kolonner ← oprindelse, plus en tabel med Power Query-trin pr. kolonne.
-3. **Kolonne-lineage pr. tabel** – sammenklappelige tabeller med oprindelse og trin.
+1. **Overview** – data source → shared queries → tables → report pages.
+2. **Dashboard slots** – one graph per slot: slot ← measure ← dependent measures ← columns ← origin, plus a
+   table with the Power Query steps per column.
+3. **Column lineage per table** – collapsible tables with origin and steps.
 
-Mermaid bruger kun `flowchart LR` (understøttet af Azure DevOps-wiki). `--fence azdo` (standard)
-giver `::: mermaid`, `--fence github` giver ```` ```mermaid ````.
+Mermaid uses only `flowchart LR` (supported by Azure DevOps wikis). `--fence azdo` (default) gives
+`::: mermaid`, `--fence github` gives ```` ```mermaid ````.
 
-## lineage.html (tilvalg, `--html`)
-Én selvstændig HTML-side med lineage på tabelniveau. Den virker offline og kræver ingen server.
-Skabelonen ligger i `assets/lineage-template.html`, og data indsættes som JSON i
-`<script id="lineage-data">`.
+## lineage.html (optional, `--html`)
+One self-contained HTML page with table-level lineage. It works offline and needs no server. The template is
+`assets/lineage-template.html`, and the data is inserted as JSON in `<script id="lineage-data">`.
 
-- **Kolonner = lag**, fra venstre mod højre: filer (CSV/Excel-ark), databaseskemaer sorteret efter
-  navn (raw/landing → bronze → staging → silver → gold; andre skemaer efter deres kilder), Power
-  Query-queries, Power BI-tabeller og rapportsider. Når tabeller i samme skema bygger på hinanden,
-  deles skemaet i trin (`mp_x_gold · trin 2`).
-- **Grupper**: tabeller i en kolonne grupperes efter den tabel, de føder ("føder dim_customer").
-- **Stiplet rød kant**: tabellen bruges ikke videre af de læste SQL-filer eller Power Query, eller en
-  Power BI-tabel bruges ikke på nogen rapportside. Uden rapportsider markeres modeltabellerne ikke.
-- **Klik** på en tabel fremhæver hele dens vej op- og nedstrøms. Klik igen eller tryk Esc for at
-  fjerne fremhævningen. Hold musen over en tabel for at se fuldt navn, type, beskrivelse og antal
-  forbindelser.
-- Databaselagene kræver `--sql`. Uden SQL viser siden kun Power Query → model → sider.
-  Temp-tabeller får deres egen kolonne ("temp-tabeller"), og CTE'er følges som underforespørgsler.
-  Dynamisk SQL (`execute format(…)`), `MERGE` og `UPDATE` afbryder sporet ligesom i Opstrøms kilde.
-  Så vises tabellen før bruddet som "bruges ikke videre".
+- **Columns = layers**, left to right: files (CSV/Excel sheets), database schemas sorted by name
+  (raw/landing → bronze → staging → silver → gold; other schemas after their sources), Power Query queries,
+  Power BI tables and report pages. When tables in the same schema build on each other, the schema is split
+  into steps (`mp_x_gold · step 2`).
+- **Groups**: tables in a column are grouped by the table they feed ("feeds dim_customer").
+- **Dashed red border**: the table is not used further by the SQL files or Power Query that were read, or a
+  Power BI table is not used on any report page. Without report pages the model tables are not marked.
+- **Click** a table to highlight its whole path upstream and downstream. Click again or press Esc to remove
+  the highlight. Hover over a table to see the full name, type, description and number of connections.
+- The database layers need `--sql`. Without SQL the page shows only Power Query → model → pages. Temp tables
+  get their own column ("temp tables"), and CTEs are followed like subqueries. Dynamic SQL
+  (`execute format(…)`), `MERGE` and `UPDATE` break the trail as in Upstream source. The table before the
+  break is then shown as "not used further".
 
-## model.dbml (dbdiagram.io)
+## model.dbml (dbdiagram.io, optional)
+Written unless `--no-dbml` is given.
+
 | Power BI | DBML |
 |---|---|
-| Tabeller | `Table` med `headercolor` pr. type og `TableGroup` (Fakta / Bro / Dimension / Dato / Measures / Hjælpe) |
-| Measure-tabel | `Table` hvor hvert measure er en "kolonne" af typen `measure`; DAX og dashboard-plads i `note` |
-| Beregnede kolonner | Almindelig kolonne, `note: 'Beregnet (DAX): …'` |
-| Skjulte kolonner | Med, markeret `Skjult` i noten (skjult pladsholder i measure-tabellen udelades) |
-| Nøgle | `[pk]` på `isKey`-kolonnen eller 1-siden af en relation |
-| Relationer | `Ref` med `>` (mange-til-én), `-` (én-til-én), `<>` (mange-til-mange). Inaktive og tovejs-relationer står som kommentar på `Ref` og i tabellens `Note` (DBML har ingen stiplede linjer) |
-| Tabelbeskrivelse | `Note` med beskrivelse, type, kilde, kildeobjekter, Power Query-queries, inaktive relationer og dashboard-pladser |
+| Tables | `Table` with `headercolor` per type and `TableGroup` (Fact / Bridge / Dimension / Date / Measures / Helper) |
+| Measure table | `Table` where every measure is a "column" of type `measure`; DAX and dashboard slot in `note` |
+| Calculated columns | Ordinary column, `note: 'Calculated (DAX): …'` |
+| Hidden columns | Included, marked `Hidden` in the note (the hidden placeholder in the measure table is left out) |
+| Key | `[pk]` on the `isKey` column or the one side of a relationship |
+| Relationships | `Ref` with `>` (many-to-one), `-` (one-to-one), `<>` (many-to-many). Inactive and two-way relationships are a comment on the `Ref` and in the table's `Note` (DBML has no dashed lines) |
+| Table description | `Note` with description, type, source, source objects, Power Query queries, inactive relationships and dashboard slots |

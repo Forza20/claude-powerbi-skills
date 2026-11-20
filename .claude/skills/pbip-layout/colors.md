@@ -1,67 +1,67 @@
-# Farver
+# Colours
 
-Hver farve på skabelonens faneblade er en farvenøgle (template.json → `colors`). `colors` i config.json
-sætter dem (HEX, `#RRGGBB`); en nøgle der udelades beholder skabelonens farve, så uden `colors` ser
-fanebladene præcis ud som kilderapporten (*Standard*). `colors` ændrer kun farveværdier: faneblade, visuals,
-placeringer, størrelser, felter, skrifttyper, talformater, tekster og bogmærker er ens for alle varianter
-(`tests/colors-only.test.js`). En ukendt nøgle eller en værdi, der ikke er `#RRGGBB`, stopper generatoren.
+Every colour on the template's pages is a colour key (template.json → `colors`). `colors` in config.json
+sets them (hex, `#RRGGBB`); a key that is left out keeps the template's colour, so without `colors` the
+pages look exactly like the source report (*Standard*). `colors` changes colour values only: pages,
+visuals, positions, sizes, fields, fonts, number formats, texts and bookmarks are the same for every
+variant (`tests/colors-only.test.js`). An unknown key or a value that is not `#RRGGBB` stops the generator.
 
-| Nøgle | Bruges til | Skabelon |
+| Key | Used for | Template |
 |---|---|---|
-| `dark` | navigationsskinne, KPI- og fremhævningsfliser, figurer, dataserier, tooltip-baggrund | `#333333` |
-| `teal` | accent: KPI-værdier, datalabels, aktive navigationsikoner, fremhævninger | `#20E2D7` |
-| `onDark` | tekst og ikoner på `dark` | `#FFFFFF` |
-| `panel` | lyse baggrunde, den lave ende af farveskalaer | `#FFFFFF` |
-| `muted` | sekundære titler | `#666666` |
-| `soft` | baggrund på slicer-elementer | `#E6E6E6` |
-| `bar` | databjælker i tabeller | `#CCCCCC` |
-| `axis` | databjælkernes akse; temaets tekstfarve | `#252423` |
-| `bad` | fald, høj returrate (rød = dårligere) | `#DE6A73` |
-| `badDark` | returserien | `#A1343C` |
-| `gold` | anden seriefarve (donuts) | `#E1C233` |
+| `dark` | navigation rail, KPI and highlight tiles, shapes, chart series, tooltip background | `#333333` |
+| `teal` | accent: KPI values, data labels, active navigation icons, highlights | `#20E2D7` |
+| `onDark` | text and icons on `dark` | `#FFFFFF` |
+| `panel` | light backgrounds, the low end of colour scales | `#FFFFFF` |
+| `muted` | secondary titles | `#666666` |
+| `soft` | slicer item background | `#E6E6E6` |
+| `bar` | data bars in tables | `#CCCCCC` |
+| `axis` | data bar axis; the theme's text colour | `#252423` |
+| `bad` | decrease, high return rate (red = worse) | `#DE6A73` |
+| `badDark` | the returns series | `#A1343C` |
+| `gold` | second series colour (donuts) | `#E1C233` |
 
-Navigationsikonerne farves også om med nøglerne (de hvide = `onDark`, accentikonerne = `teal`). Temaet
-`pbip-layout-theme.json` indeholder kun farver: seriefarverne starter med `dark`, `gold`, `teal`, `bad`, så
-grafer uden egen farve følger valget. `"theme": false` udelader temaet.
+The navigation icons are recoloured with the keys too (white ones = `onDark`, accent ones = `teal`). The
+theme `pbip-layout-theme.json` holds colours only: its series colours start with `dark`, `gold`, `teal`,
+`bad`, so charts without their own colour follow the choice. `"theme": false` leaves the theme out.
 
-## Varianter (kun farver)
+## Variants (colours only)
 
-**1. Standard** – skabelonen som den er. Ingen `colors`.
+**1. Standard** – the template as it is. No `colors`.
 
-**2. Mørk**
+**2. Dark**
 ```json
 "colors": { "dark": "#111116", "muted": "#A8A8B3", "teal": "#1FC8C0", "onDark": "#F2F2F5", "panel": "#2A2A33",
   "soft": "#3A3A45", "bar": "#4A4A57", "axis": "#F2F2F5" }
 ```
 
-**3. Brand** – brugerens farver: `dark` = primærfarve, `teal` = accentfarve, `gold` = en anden brandfarve.
-Behold `bad` rød, medmindre brandet siger andet: den betyder "dårligere".
+**3. Brand** – the user's colours: `dark` = primary colour, `teal` = accent colour, `gold` = a second
+brand colour. Keep `bad` red unless the brand says otherwise: it means "worse".
 
-## Fra HEX-koder
+## From hex codes
 
-Kobl brugerens koder til nøglerne: den mørkeste brandfarve → `dark`, den mest synlige → `teal`, en anden
-→ `gold`; tekst og baggrund kun når brugeren beder om en mørk eller farvet side.
+Map the user's codes to the keys: the darkest brand colour → `dark`, the most visible brand colour →
+`teal`, a second one → `gold`; text and background only when the user asks for a dark or tinted page.
 
-## Fra et screenshot
+## From a screenshot
 
-`scripts/palette.ps1 -Path <billede>` (Windows PowerShell, ingen ekstra moduler) skalerer billedet ned,
-tæller farverne og foreslår hver nøgle (`suggestion`):
+`scripts/palette.ps1 -Path <image>` (Windows PowerShell, no extra modules) scales the image down, counts
+the colours and suggests every key (`suggestion`):
 
-| Nøgle | Tages fra |
+| Key | Taken from |
 |---|---|
-| `panel` | lyst billede: hvid; mørkt billede: det næststørste mørke, neutrale område |
-| `axis` | den neutrale farve med mest kontrast til `panel`, gjort mørkere/lysere til kontrast ≥ 7 |
-| `teal` | den mest brugte mættede farve (knapper, links); ingen → `#1FC8C0` |
-| `dark` | en mørk brandfarve (header, footer); ingen → `#333333` |
-| `gold` | en anden mættet farve med en anden farvetone (ikke rød); ingen → skabelonens |
-| `muted`, `soft`, `bar` | blandet af ovenstående; `bad`, `badDark` forbliver røde |
+| `panel` | light image: white; dark image: the second largest dark, neutral area |
+| `axis` | the neutral colour with the most contrast to `panel`, made darker/lighter to contrast ≥ 7 |
+| `teal` | the most used saturated colour (buttons, links); none → `#1FC8C0` |
+| `dark` | a dark brand colour (header, footer); none → `#333333` |
+| `gold` | a second saturated colour of another hue (not red); none → the template's |
+| `muted`, `soft`, `bar` | mixed from the above; `bad`, `badDark` stay red |
 
-Accentfarven skal kunne læses som tal på de mørke fliser (kontrast ≥ 4,5); er den for mørk, gøres den
-lysere – `accentFromImage` viser originalen, `accentAdjusted` om den blev ændret. `contrastOk` er `true`, når
-alle tekstpar består. Et screenshot med store fotos kan skævvride baggrunden (`siteIsDark: true` for en lys
-side): brug et udsnit med header, knapper og tekst.
+The accent colour must be readable as numbers on the dark tiles (contrast ≥ 4.5); if it is too dark it is
+made lighter – `accentFromImage` shows the original, `accentAdjusted` whether it changed. `contrastOk` is
+`true` when every text pair passes. A screenshot with large photos can skew the background
+(`siteIsDark: true` for a light site): use a crop with the header, buttons and text.
 
-## Kontrast
+## Contrast
 
-Tjek før du bygger: `onDark` og `teal` på `dark` mindst 4,5; `axis` og `muted` på `panel` mindst 4,5. Er en
-brandfarve for lys til `dark`, så brug den som `teal` og behold en mørk `dark`.
+Check before you build: `onDark` and `teal` on `dark` at least 4.5; `axis` and `muted` on `panel` at least
+4.5. If a brand colour is too light for `dark`, use it as `teal` and keep a dark `dark`.

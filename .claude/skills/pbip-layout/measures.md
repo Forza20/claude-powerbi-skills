@@ -1,62 +1,61 @@
-# Measures og parametre skabelonen skal bruge
+# Measures and parameters the template needs
 
-Skabelonens faneblade bruger measures, en model ofte mangler (sidste måned, targets, afvigelser,
-prisjustering), og tre parametre. Lav kun det, de valgte faneblade skal bruge (template.json → `fields`,
-filtreret på faneblad), og som modellen ikke har. Navne: modellens konvention – snake_case i en
-pipeline-power-bi-kørsel (`previous_month_sales`), ellers som modellens egne measures. Test hver ny measure
-med DAX.
+The template's pages use measures a model often lacks (last month, targets, gaps, a price adjustment) and
+three parameters. Create only what the chosen pages need (template.json → `fields`, filtered by page) and
+the model does not have. Names: the model's convention – snake_case in a pipeline-power-bi run
+(`previous_month_sales`), otherwise like the model's own measures. Test every new measure with DAX.
 
-**Hvor de skal hen:**
-- **En pipeline-power-bi-kørsel** (kørselsmappen har `choices.json` med `build`): tilføj measures til
-  `build.measures[]` (mappe `Template`) og parametrene til `build.parameters[]` (pipeline-power-bi
-  `references/build-spec.md`), og kør `node .claude\skills\pipeline-power-bi\scripts\rebuild.js runs\<run-id>`.
-  Skriv dem aldrig i hånden i TMDL'en dér – næste rebuild ville fjerne dem.
-- **Andre projekter:** powerbi-modeling-mcp (`measure_operations`, `table_operations` til parametrene),
-  eller TMDL'en direkte med Desktop lukket (SKILL.md → "Uden powerbi-modeling-mcp").
+**Where they go:**
+- **A pipeline-power-bi run** (the run folder has `choices.json` with `build`): add the measures to
+  `build.measures[]` (folder `Template`) and the parameters to `build.parameters[]` (pipeline-power-bi
+  `references/build-spec.md`), then `node .claude\skills\pipeline-power-bi\scripts\rebuild.js runs\<run-id>`.
+  Never write them into the TMDL by hand there – the next rebuild would remove them.
+- **Any other project:** powerbi-modeling-mcp (`measure_operations`, `table_operations` for the
+  parameters), or the TMDL directly with Desktop closed (SKILL.md → "Without powerbi-modeling-mcp").
 
-`<Revenue>`, `<Orders>`, `<Profit>`, `<Returns>`, `<Customers>`, `<Cost>` er de measures, der er koblet til
-skabelonens `Total Revenue`, `Total Orders` …; `<Date>` er datotabellens datokolonne.
+`<Revenue>`, `<Orders>`, `<Profit>`, `<Returns>`, `<Customers>`, `<Cost>` are the measures mapped to the
+template's `Total Revenue`, `Total Orders` …; `<Date>` is the date table's date column.
 
-> Brug **ikke** variabelnavnet `LastDate` – det kolliderer med DAX-funktionen `LASTDATE`.
+> Do **not** use the variable name `LastDate` – it collides with the DAX function `LASTDATE`.
 
-## Forrige måned (Exec: de tre månedlige KPI'er; Product: targets)
+## Previous month (Exec: the three monthly KPIs; Product: targets)
 ```dax
 previous_month_sales  = CALCULATE ( [<Revenue>], DATEADD ( <Date>, -1, MONTH ) )
 previous_month_orders = CALCULATE ( [<Orders>], DATEADD ( <Date>, -1, MONTH ) )
-previous_month_<x>    = CALCULATE ( [<Returns>], DATEADD ( <Date>, -1, MONTH ) )   -- den tredje månedlige KPI
-previous_month_<p>    = CALCULATE ( [<Profit>], DATEADD ( <Date>, -1, MONTH ) )    -- til profit-target
+previous_month_<x>    = CALCULATE ( [<Returns>], DATEADD ( <Date>, -1, MONTH ) )   -- the third monthly KPI
+previous_month_<p>    = CALCULATE ( [<Profit>], DATEADD ( <Date>, -1, MONTH ) )    -- for the profit target
 ```
-Format som basis-measuren. KPI-visuals sammenligner seneste måned med måneden før; slutter dataene midt i
-en måned, så sæt KPI'ens datofilter til hele måneder (`is_complete_month = TRUE` på datotabellen, når den
-har den).
+Format like the base measure. The KPI visuals compare the latest month with the month before; if the data
+ends in the middle of a month, set the KPI's date filter to whole months (`is_complete_month = TRUE` on the
+date table when it has one).
 
-## Targets (Product Detail: de tre målere)
-Brug modellens egne targets, når den har dem (en targettabel: `target_revenue`). Ellers skabelonens regel –
-sidste måned plus en vækst, brugeren bekræfter (skabelonen: 10 %):
+## Targets (Product Detail: the three gauges)
+Use the model's own targets when it has them (a target table: `target_revenue`). Otherwise the template's
+rule – last month plus a growth the user confirms (template: 10 %):
 ```dax
 order_target   = [previous_month_orders] * ( 1 + 0.10 )
 sales_target   = [previous_month_sales] * ( 1 + 0.10 )
 profit_target  = [previous_month_<p>] * ( 1 + 0.10 )
 order_target_gap  = [<Orders>] - [order_target]
-sales_target_gap  = [<Revenue>] - [sales_target]       -- eller - [target_revenue]
+sales_target_gap  = [<Revenue>] - [sales_target]       -- or - [target_revenue]
 profit_target_gap = [<Profit>] - [profit_target]
 ```
 
-## Prisjustering (Product Detail: profittrend med what-if-skyder)
-Parameter (pipeline-spec):
+## Price adjustment (Product Detail: profit trend with a what-if slider)
+Parameter (pipeline spec):
 ```json
 { "kind": "whatIf", "name": "price_adjustment_pct", "min": -1, "max": 1, "step": 0.1, "default": 0, "format": "0%" }
 ```
-Den laver tabellen `price_adjustment_pct` (én kolonne, GENERATESERIES) og measuren
-`price_adjustment_pct_value`. Derefter:
+It makes the table `price_adjustment_pct` (one column, GENERATESERIES) and the measure
+`price_adjustment_pct_value`. Then:
 ```dax
 adjusted_sales        = [<Revenue>] * ( 1 + [price_adjustment_pct_value] )
 adjusted_gross_margin = [adjusted_sales] - [<Cost>]
 ```
-Kobl `Price Adjustment (%)[Price Adjustment (%)]` → `price_adjustment_pct[price_adjustment_pct]` og
+Map `Price Adjustment (%)[Price Adjustment (%)]` → `price_adjustment_pct[price_adjustment_pct]` and
 `Measure Table[Adjusted Profit]` → `adjusted_gross_margin`.
 
-## Feltparametre (Product og Customer Detail: "hvilken measure ser jeg")
+## Field parameters (Product and Customer Detail: "which measure do I see")
 ```json
 { "kind": "fields", "name": "product_metric_selection", "items": [ { "label": "Orders", "measure": "orders" },
   { "label": "Revenue", "measure": "total_sales" }, { "label": "Profit", "measure": "gross_margin" },
@@ -64,18 +63,18 @@ Kobl `Price Adjustment (%)[Price Adjustment (%)]` → `price_adjustment_pct[pric
 { "kind": "fields", "name": "customer_metric_selection", "items": [ { "label": "Customers", "measure": "customers" },
   { "label": "Revenue per customer", "measure": "sales_per_customer" } ] }
 ```
-Hver laver en tabel med `<navn>` (sliceren), `<navn>_fields` og `<navn>_order` (skjulte). Kobl
+Each makes a table with `<name>` (the slicer), `<name>_fields` and `<name>_order` (hidden). Map
 `Product Metric Selection[Product Metric Selection]` → `product_metric_selection[product_metric_selection]`
-og `… Fields` → `product_metric_selection[product_metric_selection_fields]` (det samme for Customer). Uden
-for en pipeline-kørsel: lav dem i Desktop (Modellering → Ny parameter → Felter) eller som beregnede tabeller
-med `NAMEOF`, som skabelonens kilderapport gør.
+and `… Fields` → `product_metric_selection[product_metric_selection_fields]` (the same for Customer).
+Outside a pipeline run, create them in Desktop (Modeling → New parameter → Fields) or as calculated
+tables with `NAMEOF`, as the template's source report does.
 
-## Kunder (Customer Detail)
+## Customers (Customer Detail)
 ```dax
-customers          = DISTINCTCOUNT ( <Fact>[<kundenøgle>] )
+customers          = DISTINCTCOUNT ( <Fact>[<customer key>] )
 sales_per_customer = DIVIDE ( [<Revenue>], [customers] )
 ```
 
-## Formater
-Behold modellens formater; skabelonens visuals sætter selv visningsenheder (K, M) som kilderapporten.
-Rater `0.0%`, beløb med modellens valuta (`\$#,0`).
+## Formats
+Keep the model's formats; the template's visuals set their own display units (K, M) like the source
+report. Rates `0.0%`, amounts with the model's currency (`\$#,0`).

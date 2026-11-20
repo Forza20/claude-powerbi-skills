@@ -1,222 +1,220 @@
 ---
 name: pbip-layout
-description: Bygger en af to rapportskabeloner ind i et Power BI PBIP-projekt – AdventureWorks (Exec Dashboard, Map, Product Detail, Customer Detail, Category Tooltip, Q&A, Decomposition Tree, Key Influencers – taget fra adventureworks_report.pbix med farver, navigation, bogmærker og layout) eller Business (Home + modulerne Marketing, Sales og Finance med hver sit overblik og drillthrough; skabelonens measures laves ud fra modellens egne kolonner) og kobler hvert faneblad til projektets egne measures og kolonner. Brugeren vælger altid, hvilke faneblade der skal med; farver kan komme fra HEX-koder eller et screenshot og ændrer kun farverne. Trigger ALTID når brugeren skriver `anvend "layout.md"` (også uden anførselstegn, fx "anvend layout.md") sammen med en PBIP-fil/-mappe eller et åbent PBIP-projekt i Power BI Desktop, og når en pipeline-agent (fx `layout-applier`) bliver bedt om at anvende layoutet – se "Pipeline-tilstand".
+description: Builds one of two report templates into a Power BI PBIP project – AdventureWorks (Exec Dashboard, Map, Product Detail, Customer Detail, Category Tooltip, Q&A, Decomposition Tree, Key Influencers – taken from adventureworks_report.pbix with its colours, navigation, bookmarks and layout) or Business (Home + the Marketing, Sales and Finance modules, each with an overview and a drillthrough page; the template's measures are made from the model's own columns) and connects every page to the project's own measures and columns. The user always chooses which pages to include; colours can come from hex codes or a screenshot and change colours only. ALWAYS trigger when the user writes `apply "layout.md"` (also without quotes, e.g. "apply layout.md") together with a PBIP file/folder or a PBIP project open in Power BI Desktop, and when a pipeline agent (e.g. `layout-applier`) is asked to apply the layout – see "Pipeline mode".
 ---
 
-# Anvend rapportskabelonen på et PBIP-projekt
+# Apply the report template to a PBIP project
 
-Der er to skabeloner, begge rigtige rapporter skilt ad i `templates/<nøgle>/` (faneblade, visuals,
-bogmærker, ikoner; hver farve er en farvenøgle):
-- **`adventureworks`** – salgsrapporten. [layout.md](layout.md) beskriver fanebladene og hvert skabelonfelt
-  med hvad det skal være og en reserveløsning.
-- **`business`** – Home + modulerne Marketing, Sales, Finance (overblik + drillthrough hver).
-  [layout-business.md](layout-business.md): modulerne, datakontrakten, farverne. Her kobles *kolonner* til en
-  datakontrakt, og [scripts/gen-measures.js](scripts/gen-measures.js) laver skabelonens measures og felterne.
+There are two templates, both real reports taken apart into `templates/<key>/` (pages, visuals,
+bookmarks, icons; every colour a colour key):
+- **`adventureworks`** – the sales report. [layout.md](layout.md) describes the pages and every template
+  field with what it should be and its fallback.
+- **`business`** – Home + the Marketing, Sales and Finance modules (overview + drillthrough each).
+  [layout-business.md](layout-business.md): the modules, the data contract, the colours. Here *columns* are
+  mapped to a data contract, and [scripts/gen-measures.js](scripts/gen-measures.js) makes the template's
+  measures and the fields.
+ [scripts/gen-report.js](scripts/gen-report.js)
+builds the chosen pages from a config ([config.example.json](config.example.json)). Measures and
+parameters the pages need: [measures.md](measures.md). Colours: [colors.md](colors.md). Standing choices:
+a profile ([profile.md](profile.md)).
 
-[scripts/gen-report.js](scripts/gen-report.js) bygger de valgte faneblade fra en config
-([config.example.json](config.example.json)). Measures og parametre: [measures.md](measures.md). Farver:
-[colors.md](colors.md). Faste valg: en profil ([profile.md](profile.md)).
+Work with the user in their language (English by default).
 
-Arbejd med brugeren på brugerens sprog.
-
-## Forudsætninger
-- Uden for dette repo: installér først Node.js 18+, de to `powerbi-authoring`-skills nedenfor og
+## Prerequisites
+- Outside this repo, install first: Node.js 18+, the two `powerbi-authoring` skills below and the
   `powerbi-report-author` CLI (`/plugin marketplace add microsoft/skills-for-fabric`,
-  `/plugin install powerbi-authoring@fabric-collection`). Ingen anden skill er nødvendig for at køre denne;
-  pipeline-tilstand (nedenfor) kræver desuden en orkestrator, der leverer `run.json`.
-- Indlæs skills `powerbi-authoring:semantic-model-authoring` (measures) og
-  `powerbi-authoring:powerbi-report-cli` (PBIR, validate, preview), og følg deres regler.
-- `powerbi-report-author` CLI installeret (`npm install -g @microsoft/powerbi-report-authoring-cli@latest`).
-- Projektet skal være PBIP i PBIR-format (`<Navn>.Report/definition/pages`). En .pbix: bed brugeren om
-  Filer → Gem som → *.pbip, og stop.
+  `/plugin install powerbi-authoring@fabric-collection`). No other skill is needed to run this one;
+  pipeline mode (below) additionally needs an orchestrator that supplies `run.json`.
+- Load the skills `powerbi-authoring:semantic-model-authoring` (measures) and
+  `powerbi-authoring:powerbi-report-cli` (PBIR, validate, preview) and follow their rules.
+- `powerbi-report-author` CLI installed (`npm install -g @microsoft/powerbi-report-authoring-cli@latest`).
+- The project must be PBIP in PBIR format (`<Name>.Report/definition/pages`). A .pbix: ask the user for
+  File → Save as → *.pbip, and stop.
 
-## Arbejdsgang
+## Workflow
 
-1. **Find projektet.** Den uploadede/navngivne sti, ellers søg efter `*.pbip`. Notér `.Report`-mappen.
+1. **Find the project.** The uploaded/named path, otherwise search for `*.pbip`. Note the `.Report` folder.
 
-2. **Forbind til modellen.** Åben i Power BI Desktop: powerbi-modeling-mcp (`ListLocalInstances` →
-   `Connect`); ellers `ConnectFolder` på `<Navn>.SemanticModel/definition`. List tabeller, kolonner,
-   measures og relationer (uden MCP: læs TMDL'en, "Uden powerbi-modeling-mcp"). Læs brugerens profil, hvis
-   der er en, og sig hvilke valg der kommer fra den.
+2. **Connect to the model.** Open in Power BI Desktop: powerbi-modeling-mcp (`ListLocalInstances` →
+   `Connect`); otherwise `ConnectFolder` on `<Name>.SemanticModel/definition`. List tables, columns,
+   measures and relationships (without MCP: read the TMDL, "Without powerbi-modeling-mcp"). Read the
+   user's profile if there is one; say which choices come from it.
 
-3. **Skabelon og faneblade – spørg altid, også med en profil.** Først skabelonen (én AskUserQuestion), når
-   den ikke er givet (`config.template`, profilens `template`, `run.json → layout_template`):
-   "Generic layout – salgsrapport (ordrer, produkter, kunder, kort)" · "Business – Marketing, Sales og Finance
-   (Home + moduler)". Anbefal ud fra modellen: leads/kampagner, opportunities/pipeline eller
-   hovedbog/kontotyper → Business; ordrelinjer med produkter og kunder → Generic layout.
-   I alle spørgsmål, previews og opsummeringer til brugeren hedder AdventureWorks-skabelonen
-   **Generic layout** og dens egne farver **Generic colors** – nøglen er stadig `adventureworks`.
-   **Business:** ét multiSelect "Hvilke moduler og faneblade skal rapporten have?" – Home · Marketing
-   (+ Campaign Detail) · Sales (+ Opportunity Detail) · Finance (+ P&L Detail); beskrivelsen siger, hvad
-   modellen har eller mangler til modulet (layout-business.md → Påkrævet pr. modul). Et modul giver begge
-   dets faneblade; spørg kun om drillthrough-siden særskilt, hvis modellen ikke kan fylde den.
-   **AdventureWorks:** AskUserQuestion med to multiSelect-spørgsmål; hver
-   mulighed = et faneblad, beskrivelsen = hvad det viser, og hvad modellen har eller mangler til det
-   (layout.md → Faneblade):
-   - "Hvilke dashboard-faneblade skal rapporten have?" – Exec Dashboard, Map, Product Detail, Customer Detail
-   - "Hvilke analyse-faneblade skal rapporten have?" – Category Tooltip, Q&A, Decomposition Tree, Key Influencers
-   En profils `pages` markeres "(plejer at blive valgt)". Anbefal ikke et faneblad, modellen ikke kan fylde
-   (et kort uden en placeringskolonne). Svaret er `config.pages`. Intet valgt: stop og spørg igen.
+3. **Template and pages – always ask, even with a profile.** First the template (one AskUserQuestion),
+   unless given (`config.template`, the profile's `template`, `run.json → layout_template`):
+   "Generic layout – sales report (orders, products, customers, map)" · "Business – Marketing, Sales and
+   Finance (Home + modules)". Recommend from the model: leads/campaigns, opportunities/pipeline or a
+   ledger with account types → Business; order lines with products and customers → Generic layout.
+   In every question, preview and summary shown to the user, the AdventureWorks template is called
+   **Generic layout** and its own colours **Generic colors** – the key stays `adventureworks`.
+   **Business:** one multiSelect "Which modules and pages should the report have?" – Home · Marketing
+   (+ Campaign Detail) · Sales (+ Opportunity Detail) · Finance (+ P&L Detail); the description says what the
+   model has or lacks for the module (layout-business.md → Required per module). A module gives both its
+   pages; ask about the drillthrough page separately only when the model cannot fill it.
+   **AdventureWorks:** use AskUserQuestion with two multiSelect questions,
+   each option = a page, its description = what it shows and what the model has or lacks for it
+   (layout.md → Pages):
+   - "Which dashboard pages should the report have?" – Exec Dashboard, Map, Product Detail, Customer Detail
+   - "Which analysis pages should the report have?" – Category Tooltip, Q&A, Decomposition Tree, Key Influencers
+   A profile's `pages` are marked "(usually chosen)" in the labels; recommend nothing the model cannot
+   fill (a map without a location column). The answer is `config.pages`. Nothing chosen: stop and ask again.
 
-4. **Farver (kun med en bruger til stede).** Spørg, om brugeren har farvekoder (HEX, en `.md`-fil) eller
-   et screenshot af en hjemmeside eller et brand. Ingen af delene: *Standard* – skabelonens egne farver, vist
-   for brugeren som "Generic colors".
-   - **Et farvevalg ændrer kun farver.** HEX-koder eller et screenshot udfylder kun `colors` (og `theme`) i
-     config.json – faneblade, felter, tekster, skrifttyper, talformater og placeringer er præcis som med
-     *Standard*. Generatoren afviser ukendte nøgler og alt, der ikke er `#RRGGBB`;
-     `node "<skill-mappe>/tests/colors-only.test.js"` og `tests/business.test.js` beviser det – kør begge efter
-   ændringer i `gen-report.js`. Business-nøglerne: layout-business.md → Farver (good/bad/neutral er faste).
-   - **Screenshot:** mål farverne i stedet for at gætte:
-     `powershell -NoProfile -ExecutionPolicy Bypass -File "<skill-mappe>/scripts/palette.ps1" -Path "<billede>"`
-     → `suggestion` har hver farvenøgle; nævn `accentAdjusted`. Stien til et indsat billede står i beskeden
-     (`[Image: source: …]`); uden fil: aflæs farverne visuelt og sig, at de er skønnede.
-   - HEX-koder: kobl dem til nøglerne (colors.md → "Fra HEX-koder"); tjek kontrasten (colors.md).
-   - Højst 2 varianter (fx *Standard* og *Brand*); de adskiller sig kun i farver.
-   *I pipeline-tilstand:* profilens farver, ellers *Standard*.
+4. **Colours (only with a user present).** Ask whether the user has colour codes (hex, a `.md` file) or a
+   screenshot of a website or brand. With neither: *Standard* – the template's own colours, shown to the
+   user as "Generic colors".
+   - **A colour choice changes colours only.** Hex codes or a screenshot only fill `colors` (and `theme`)
+     in config.json – pages, fields, texts, fonts, number formats and positions stay exactly as with
+     *Standard*. The generator refuses unknown keys and anything that is not `#RRGGBB`;
+     `node "<skill folder>/tests/colors-only.test.js"` and `tests/business.test.js` prove it – run both after
+     changing `gen-report.js`. The business keys: layout-business.md → Colours (good/bad/neutral are fixed).
+   - **Screenshot:** measure the colours instead of guessing:
+     `powershell -NoProfile -ExecutionPolicy Bypass -File "<skill folder>/scripts/palette.ps1" -Path "<image>"`
+     → `suggestion` has every colour key; mention `accentAdjusted`. The path of a pasted image is in the
+     message (`[Image: source: …]`); without a file, read the colours visually and say they are estimated.
+   - Hex codes: map them to the keys (colors.md → "From hex codes"); check the contrast (colors.md).
+   - At most 2 variants (e.g. *Standard* and *Brand*); they differ in colours only.
+   *In pipeline mode:* the profile's colours, otherwise *Standard*.
 
-5. **Kobl skabelonfelterne.** *Business:* kobl datakontrakten i stedet og lad `gen-measures.js` lave
-   measures og felter (layout-business.md → Datakontrakt → measures): `suggest-fields.js` foreslår
-   `config.contract`, du tjekker betydning og værdier (`config.values`), og
-   `node "<skill-mappe>/scripts/gen-measures.js" "<config.json>" --write-config --spec … | --tmdl …` skriver
-   measures og `config.fields`. Hver `skipped` measure og hver `derive`-kolonne er en beslutning (trin 7).
-   Spring trin 6 over. *AdventureWorks:* start med forslaget:
-   `node "<skill-mappe>/scripts/suggest-fields.js" "<.SemanticModel-mappe>" --config "<config.json>"`
-   (config.json med `template` og `pages`; det udfylder `fields` ud fra navne i
-   `templates/<nøgle>/field-hints.json` og skriver `how` pr. felt – navn, reserveløsning, `make: <opskrift>`
-   eller ingen – og de `decisions` en reserveløsning gav). Tjek det derefter felt for felt med layout.md's
-   tabeller – det forventede indhold først, så reserveløsningen, `null` når intet passer. Kør DAX for at kende værdierne. Tjek
-   betydninger: er en "line total" før eller efter rabat; er en rate "høj = dårlig" (skabelonen: returrate).
-   Når en reserveløsning ændrer betydningen: sæt `labels` og `texts` (template.json → `pages[].texts` har
-   hver tekst præcist). `node gen-report.js … --preview` lister hvert felt, der ikke er koblet.
+5. **Map the template fields.** *Business:* map the data contract instead and let `gen-measures.js` make
+   the measures and the fields (layout-business.md → Data contract → measures): `suggest-fields.js` proposes
+   `config.contract`, you check meanings and values (`config.values`), and
+   `node "<skill folder>/scripts/gen-measures.js" "<config.json>" --write-config --spec … | --tmdl …` writes the
+   measures and `config.fields`. Every `skipped` measure and every `derive` column is a decision (step 7).
+   Skip step 6. *AdventureWorks:* start with the suggestion:
+   `node "<skill folder>/scripts/suggest-fields.js" "<.SemanticModel folder>" --config "<config.json>"`
+   (config.json with `template` and `pages`; it fills `fields` by name from `templates/<key>/field-hints.json`
+   and prints `how` per field – name, fallback, `make: <recipe>` or none – and the `decisions` a fallback
+   raised). Then check it field by field with layout.md's tables: the expected content first, then the
+   fallback, `null` when nothing fits. Run DAX to know the values (totals, categories, latest month).
+   Check meanings: is a "line total" before or after discount; is a rate "high = bad" (template: return
+   rate). When a fallback changes the meaning, set `labels` and `texts` (template.json → `pages[].texts`
+   has every text exactly). `node gen-report.js … --preview` lists every unmapped field.
 
-6. **Measures og parametre fanebladene skal bruge** (measures.md): forrige måned, targets, afvigelser,
-   prisjustering, omsætning pr. kunde, feltparametrene. Targets: modellens egne, når den har dem; ellers
-   spørg brugeren om væksten i forhold til sidste måned (profil `targetGrowth`, skabelonen 10 %). I en
-   pipeline-power-bi-kørsel skrives de i `choices.json → build`, og `rebuild.js` bygger modellen – aldrig i
-   hånden i TMDL'en dér.
+6. **Measures and parameters the pages need** (measures.md): last month, targets, gaps, price adjustment,
+   revenue per customer, the field parameters. Targets: the model's own when it has them; otherwise ask the
+   user for the growth over last month (profile `targetGrowth`, template 10 %). In a pipeline-power-bi run
+   they go into `choices.json → build` and `rebuild.js` rebuilds the model – never by hand into the TMDL there.
 
-7. **Vis koblingen og et preview, og få godkendelse.** Skriv config.json (trin 8) og
+7. **Show the mapping and a preview, and get approval.** Write config.json (step 8) and
    ```
-   node "<skill-mappe>/scripts/gen-report.js" - "<config.json>" --preview "<scratchpad>/layout-preview.html"
+   node "<skill folder>/scripts/gen-report.js" - "<config.json>" --preview "<scratchpad>/layout-preview.html"
    ```
-   (en wireframe af de valgte faneblade: placeringer, størrelser, baggrundsfarver, titler og felter; Power
-   BI tegner selve visuals). Vis en tabel: faneblad → skabelonfelt → modelfelt → værdi, nye measures, og hvad
-   der udelades (`dropped`). Udgiv previewet som privat side, når Artifact-værktøjet findes, ellers giv
-   stien. Spørg med AskUserQuestion om koblingen og farverne, **og hver beslutning** (nedenfor); byg først
-   efter godkendelse. *I pipeline-tilstand:* intet preview, intet spørgsmål – tabellen skrives i
-   `layout-mapping.md`, beslutningerne i `layout-decisions.json`.
+   (a wireframe of the chosen pages: positions, sizes, background colours, titles and fields; Power BI
+   draws the visuals). Show a table: page → template field → model field → value, the new measures, and
+   what will be left out (`dropped`). Publish the preview as a private page when the Artifact tool is
+   there, otherwise give the path. Ask with AskUserQuestion about the mapping and the colours, **and every
+   decision** (below); build only after approval. *In pipeline mode:* no preview, no question – the table
+   goes to `layout-mapping.md`, the decisions to `layout-decisions.json`.
 
-   **Beslutninger – brugeren bestemmer, med din anbefaling.** Det, dataene lader stå åbent, vælges ikke i
-   stilhed og noteres ikke bare: det er en beslutning med din anbefaling og alternativerne. Typisk:
-   - en reserveløsning der ændrer betydningen (margin % hvor skabelonen har en returrate): farveskalaens
-     retning (`reverseScales`), teksterne (`texts`) eller en anden measure;
-   - targets: modellens egne, eller sidste måned + en vækst (5 / 10 / 15 %);
-   - et skabelonfelt uden match (`null`): udelad feltet eller visualet, eller brug et navngivet alternativ;
-   - et faneblad modellen ikke kan fylde godt (et kort med kun byer, Key Influencers med få attributter);
-   - en synlig kolonne med persondata på et faneblad (topkunder).
-   Spørg med AskUserQuestion, højst 4 pr. kald: pr. beslutning ét spørgsmål der står alene (hvad dataene
-   viser, hvorfor det betyder noget), anbefalingen først med "(Recommended)" og begrundelsen i beskrivelsen,
-   derefter 1–3 alternativer med deres virkning; brugeren kan altid skrive sit eget ("Other"). Indarbejd
-   svarene i config.json (eller measures), før der bygges.
+   **Decisions – the user decides, with your recommendation.** Whatever the data leaves open is not chosen
+   silently and not only noted: it is a decision with your recommendation and the alternatives. Typical:
+   - a fallback that changes the meaning (margin % where the template has a return rate): the colour scale's
+     direction (`reverseScales`), the texts (`texts`), or another measure;
+   - targets: the model's own, or last month + a growth (5 / 10 / 15 %);
+   - a template field with no match (`null`): leave the field or visual out, or use a named alternative;
+   - a page the model cannot fill well (a map with cities only, Key Influencers with few attributes);
+   - a visible column that holds personal data on a page (top customers).
+   Ask with AskUserQuestion, at most 4 per call: per decision one question that stands on its own (what the
+   data shows, why it matters), the recommendation first with "(Recommended)" and its reason in the
+   description, then 1–3 alternatives with their effect; the user can always write their own ("Other").
+   Apply the answers to config.json (or measures) before building.
 
-8. **config.json** (scratchpad) som [config.example.json](config.example.json) (Business:
-   [config.example-business.json](config.example-business.json) – desuden `contract`, `values`, `currencyFormat`): `template`, `pages`,
-   `fields` (`Tabel[Felt]` eller `null`), `labels`, `texts`, `reverseScales` (skabelonfelter hvis
-   farveskalaer skal gå den anden vej), `title`/`subtitle` eller `logo`, `colors`, `theme`,
-   `completeMonth` (`Tabel[Kolonne]`, en sand/falsk kolonne i datotabellen, der er sand for hele
-   måneder, fx `dim_date[is_complete_month]`; `suggest-fields.js` foreslår den). Månedskortene (KPI)
-   filtreres til hele måneder, ellers ender de i en tom eller halv måned og viser "(Tom)" / -100 %.
-   Mangler kolonnen: foreslå at tilføje den i datotabellen (anbefalet) eller accepter advarslen. Gem en kopi som `<projektmappe>/docs/layout-config.json` (opret `docs/`), så pbip-catalog kan
-   mærke felterne med deres faneblad.
+8. **config.json** (scratchpad) like [config.example.json](config.example.json) (Business:
+   [config.example-business.json](config.example-business.json) – also `contract`, `values`, `currencyFormat`): `template`, `pages`,
+   `fields` (`Table[Field]` or `null`), `labels`, `texts`, `reverseScales` (template fields whose colour
+   scales run the other way), `title`/`subtitle` or `logo`, `colors`, `theme`,
+   `completeMonth` (`Table[Column]`, a true/false column in the date table that is true for complete
+   months, e.g. `dim_date[is_complete_month]`; `suggest-fields.js` suggests it). The month cards (KPI) are
+   filtered to complete months, otherwise they end in an empty or partial month and show "(Blank)" / -100 %.
+   Column missing: suggest adding it to the date table (recommended) or accept the warning.
+   Save a copy as `<project folder>/docs/layout-config.json` (create `docs/`), so pbip-catalog can tag the
+   fields with their page.
 
-9. **Generér og tjek.**
+9. **Generate and check.**
    ```
-   node "<skill-mappe>/scripts/gen-report.js" "<.Report-mappe>" "<config.json>"
-   node "<skill-mappe>/scripts/check-fields.js" "<.Report-mappe>" "<.SemanticModel-mappe>"
-   node "<skill-mappe>/scripts/validate-report.js" "<.Report-mappe>"
+   node "<skill folder>/scripts/gen-report.js" "<.Report folder>" "<config.json>"
+   node "<skill folder>/scripts/check-fields.js" "<.Report folder>" "<.SemanticModel folder>"
+   node "<skill folder>/scripts/validate-report.js" "<.Report folder>"
    ```
-   `gen-report.js` skriver fanebladene (med id'er), bogmærkerne, `dropped` (udeladte visuals og hvorfor) og
-   `notes` (felter udeladt af et visual, basistema ændret). `check-fields.js` skal sige `ok: true`: hvert
-   felt rapporten bruger findes i modellen. `validate-report.js` kører `powerbi-report-author validate` og
-   holder skabelonens kendte fund (`known`) adskilt fra nye (`new`); `ok: true` = ingen ny fejl. De kendte
-   stammer fra skabelonens kilderapport (Desktop skrev dem): `PBIR_FORMATTING_PROP_NESTED` på
-   `anomalyDetection` (omsætningstrenden), `PBIR_VISUAL_TYPE_DEPRECATED` (`map`, `qnaVisual`),
-   `PBIR_DRILLTHROUGH_BACK_BUTTON_MISSING`, `PBIR_JSON_FILE_NO_SCHEMA` på `.pbip`/`definition.pbir`,
-   `PBIR_SCHEMA_UNREACHABLE` offline – "ret" dem ikke. Ret alt under `new`. En ny kørsel erstatter fanebladene fra den forrige
-   (samme id'er) og lader rapportens egne faneblade være.
+   `validate-report.js` runs `powerbi-report-author validate` and lists the template's known findings apart
+   (`known`) from new ones (`new`); `ok: true` = no new error.
+   `gen-report.js` prints the pages (with their ids), the bookmarks, `dropped` (visuals left out and why)
+   and `notes` (fields left out of a visual, base theme changed). `check-fields.js` must say `ok: true`:
+   every field the report uses exists in the model. The known findings come from the template's source
+   report itself (Desktop wrote them): `PBIR_FORMATTING_PROP_NESTED` on `anomalyDetection` (the revenue
+   trend), `PBIR_VISUAL_TYPE_DEPRECATED` (`map`, `qnaVisual`), `PBIR_DRILLTHROUGH_BACK_BUTTON_MISSING`,
+   `PBIR_JSON_FILE_NO_SCHEMA` on `.pbip`/`definition.pbir`, `PBIR_SCHEMA_UNREACHABLE` offline – do not
+   "fix" them. Fix every finding in `new`. A rerun replaces the pages of the earlier run (same ids) and
+   leaves the report's own pages alone.
 
-10. **Vis det i Desktop og tag et screenshot** efter powerbi-report-cli's preview-regler (`--status` →
-    åbn/genindlæs → `--screenshot`), ét pr. faneblad. Med `hasUnsavedChanges: true`: bed brugeren gemme
-    (Ctrl+S) – Desktop kan så overskrive rapportfilerne, så kør trin 9 igen bagefter. Tjek: ingen tomme
-    visuals eller fejlikoner, fliserne i `dark` med `teal` tal, navigationsknapper kun til de valgte
-    faneblade, filterpanelet åbner med filterikonet, drillthrough til Product Detail virker.
-    *I pipeline-tilstand:* spørg ikke – stop og meld tilbage (se nedenfor).
+10. **Show it in Desktop and take a screenshot** following powerbi-report-cli's preview rules (`--status` →
+    open/reload → `--screenshot`), one per page. With `hasUnsavedChanges: true`: ask the user to save
+    (Ctrl+S) – Desktop may then overwrite the report files, so run step 9 again afterwards. Check: no empty
+    visual or error icon, the tiles in `dark` with `teal` numbers, navigation buttons to the chosen pages
+    only, the slicer panel opens with the filter icon, the drillthrough to Product Detail works.
+    *In pipeline mode:* ask nothing – stop and report back (see below).
 
-11. **Rapportér** kort: de byggede faneblade, hvilket modelfelt der står hvor, nye measures og parametre,
-    hvad der blev udeladt, farverne. Tilbyd at gemme valgene som profil (profile.md), fx `profiles/<navn>.json`.
+11. **Report** briefly: the pages built, which model field is where, new measures and parameters, what was
+    left out, the colours. Offer to save the choices as a profile (profile.md), e.g. `profiles/<name>.json`.
 
-12. **Tilbyd et datakatalog** (`pbip-catalog`, læser `docs/layout-config.json`). *I pipeline-tilstand:*
-    spørg ikke – skriv i `layout-mapping.md`, at kataloget kan køres bagefter.
+12. **Offer a data catalog** (`pbip-catalog`, reads `docs/layout-config.json`). *In pipeline mode:* do not
+    ask – note in `layout-mapping.md` that the catalog can run afterwards.
 
-## Faste regler
-- Fanebladene er 1280 × 720 og beholder skabelonens layout og formater.
-- Visningsenheder er altid "Ingen": tal vises aldrig som "tusind", K eller mio., men som heltal eller
-  decimaltal efter measurets formatstreng. `gen-report.js` sætter det på hvert visual
-  (`scripts/display-units.js`); en ældre rapport rettes med `node scripts/display-units.js <Navn>.Report`.
-- Brugeren vælger fanebladene, hver gang. Byg aldrig et faneblad, brugeren ikke har valgt.
-- Ændr aldrig rapportens egne faneblade. Det generatoren ændrer ud over sine faneblade: `pages.json` (dens
-  faneblade først), bogmærker til dens faneblade, dens ikoner og et logo, basistemaet (→ skabelonens) og
-  farvetemaet `pbip-layout-theme.json` (kun farver).
-- Udgiv aldrig til Fabric uden en udtrykkelig instruks.
+## Fixed rules
+- Pages are 1280 × 720 and keep the template's layout, formats and display units (K, M).
+- The user chooses the pages, every time. Never build a page the user did not choose.
+- Never change the report's own pages. What the generator changes besides its pages: `pages.json` (its
+  pages first), bookmarks of its pages, its icons and a logo, the base theme (→ the template's) and the
+  colour theme `pbip-layout-theme.json` (colours only).
+- Never publish to Fabric without an explicit instruction.
 
-## Pipeline-tilstand (kørt af en agent uden bruger)
+## Pipeline mode (run by an agent without a user)
 
-Når en subagent kører skillen (`layout-applier` i `/messy-pipeline`, en pipeline-power-bi-kørsel), eller
-opgaven siger "pipeline-tilstand":
+When a subagent runs the skill (`layout-applier` in `/messy-pipeline`, a pipeline-power-bi run) or the task
+says "pipeline mode":
 
-- **Skabelon:** `run.json` → `layout_template` (`adventureworks` hvis den mangler).
-- **Faneblade:** orkestratoren spurgte brugeren før kørslen – fanebladene står i `run.json` → `layout_pages`
-  (eller opgaven). **Ingen faneblade angivet: vælg dem ikke selv** – afslut med status `waiting_for_user`
-  og årsagen "faneblade ikke valgt"; orkestratoren spørger.
-- **Profil:** `run.json` → `profile` giver farver, titel, labels, tekster og target-vækst. Ellers
-  *Standard*; target-væksten er en beslutning (nedenfor).
-- **Ingen AskUserQuestion** – men heller ingen stille valg. Hver beslutning (trin 7) skrives i
-  `layout-decisions.json` i kørselsmappen, og **anbefalingen anvendes**, så kørslen bliver færdig:
+- **Template:** `run.json` → `layout_template` (`adventureworks` when missing).
+- **Pages:** the orchestrator asked the user before the run – the pages are in `run.json` → `layout_pages`
+  (or the task). **No pages given: do not choose them yourself** – finish with status `waiting_for_user`
+  and the reason "pages not chosen"; the orchestrator asks.
+- **Profile:** `run.json` → `profile` gives colours, title, labels, texts, target growth. Otherwise
+  *Standard*; the target growth is a decision (below).
+- **No AskUserQuestion** – but no silent choices either. Every decision (step 7) goes to
+  `layout-decisions.json` in the run folder and the **recommendation is applied**, so the run finishes:
   ```json
-  [ { "id": "return-rate-scale", "question": "Dataene har ingen returer; margin % står hvor skabelonen viser returraten. Hvilken vej skal farveskalaen gå?",
-      "why": "I skabelonen er høj = rød (dårlig); for margin er høj godt.",
-      "options": [ { "label": "Høj margin = lys, lav = rød", "recommended": true, "effect": "reverseScales: [\"Measure Table[Return Rate]\"]" },
-                   { "label": "Behold skabelonens retning", "effect": "ingen ændring" } ],
-      "applied": "Høj margin = lys, lav = rød" } ]
+  [ { "id": "return-rate-scale", "question": "The data has no returns; margin % stands where the template shows the return rate. Which way should its colour scale run?",
+      "why": "In the template high = red (bad); for margin high is good.",
+      "options": [ { "label": "High margin = light, low = red", "recommended": true, "effect": "reverseScales: [\"Measure Table[Return Rate]\"]" },
+                   { "label": "Keep the template's direction", "effect": "no change" } ],
+      "applied": "High margin = light, low = red" } ]
   ```
-  Orkestratoren (`/messy-pipeline`, pipeline-power-bi's overdragelse) stiller brugeren spørgsmålene med
-  AskUserQuestion; et andet svar end det anvendte ændrer config.json, og `gen-report.js` køres igen.
-- **Kobling:** skriv `layout-mapping.md` i kørselsmappen: faneblad → skabelonfelt → modelfelt → værdi →
-  reserveløsning; nye measures og parametre; `dropped`; beslutningerne og hvad der blev anvendt. Første match i layout.md vinder; en
-  reserveløsning kun når modellen mangler data.
-- **Desktop (trin 10):** tjek at Desktop er lukket, før der skrives. Er Desktop åben med ugemte ændringer,
-  eller fejler åbning/screenshot (hukommelse, login): prøv ikke igen, skriv ikke videre, afslut med
-  `waiting_for_user` og årsagen.
-- **Skills:** indlæs `powerbi-authoring:semantic-model-authoring` og `powerbi-authoring:powerbi-report-cli`
-  med Skill-værktøjet; mangler de, følg denne fil alene og notér det.
+  The orchestrator (`/messy-pipeline`, pipeline-power-bi's hand-over) asks the user these questions with
+  AskUserQuestion; an answer other than the applied one changes config.json and `gen-report.js` runs again.
+- **Mapping:** write `layout-mapping.md` in the run folder: page → template field → model field → value →
+  fallback used; new measures and parameters; `dropped`; the decisions with what was applied. The first
+  match in layout.md wins; a fallback only when the model lacks the data.
+- **Desktop (step 10):** check that Desktop is closed before writing. If Desktop is open with unsaved
+  changes, or opening/the screenshot fails (memory, sign-in): do not retry, do not write further, finish
+  with `waiting_for_user` and the reason.
+- **Skills:** load `powerbi-authoring:semantic-model-authoring` and `powerbi-authoring:powerbi-report-cli`
+  with the Skill tool; if they are missing, follow this file alone and note it.
 
-### Uden powerbi-modeling-mcp
+### Without powerbi-modeling-mcp
 
-- **Model:** læs tabeller, kolonner, measures og relationer i `<Navn>.SemanticModel/definition/tables/*.tmdl`.
-- **Værdier (trin 5):** kan DAX ikke køres, tag kontrolværdierne fra kilden (`expected-values.md`, eller SQL
-  på gold-skemaet for et supabase-medallion-powerbi-projekt).
-- **Nye measures (trin 6):** uden for en pipeline-power-bi-kørsel skrives de i measuretabellens TMDL med
-  **Desktop lukket**: tab-indrykning, en ny GUID pr. `lineageTag`, navne i anførselstegn når de indeholder
-  mellemrum. Tjek at ingen lineageTag gentages.
-- **Test:** åbn i Desktop (trin 10) og sammenlign KPI-fliserne med kontrolværdierne.
+- **Model:** read tables, columns, measures and relationships in `<Name>.SemanticModel/definition/tables/*.tmdl`.
+- **Values (step 5):** if DAX cannot run, take control values from the source (`expected-values.md`, or SQL
+  on the gold schema for a supabase-medallion-powerbi project).
+- **New measures (step 6):** outside a pipeline-power-bi run, write them in the measure table's TMDL with
+  **Desktop closed**: tab indentation, a new GUID per `lineageTag`, names in quotes when they contain
+  spaces. Check that no lineageTag repeats.
+- **Test:** open in Desktop (step 10) and compare the KPI tiles with the control values.
 
-## Lav en skabelon fra en anden rapport
+## Making a template from another report
 
-`node "<skill-mappe>/scripts/extract-template.js" "<Navn.Report>" "<skill-mappe>/templates/<nøgle>"`
-gør en rapport gemt som PBIP (PBIR) til en skabelon. `--keys <sæt>` vælger farvenøgler, fanebladsnøgler,
-temaets seriefarver og rettelser til kilderapporten (`KEYSETS` i scriptet; `business` for Business-skabelonen).
-Den stopper ved en farve, den ikke har en nøgle til (tilføj den i sættets `classify()`; `'fixed'` = farven
-bliver som den er), beholder de håndskrevne filer (`field-hints.json`, `modules.json`, `contract.json`,
-`measures/`), fjerner formatering bundet til enkelte dataværdier og logoet, og skriver
-template.json (faneblade, felter, tekster, farver, ikoner). Beskriv derefter fanebladene og felterne i
-layout.md og kør testen.
+`node "<skill folder>/scripts/extract-template.js" "<Name.Report>" "<skill folder>/templates/<key>"` turns
+a report saved as PBIP (PBIR) into a template. `--keys <set>` picks the colour keys, page keys, the
+theme's series colours and fixes to the source report (`KEYSETS` in the script; `business` for the Business
+template). It stops on a colour it has no key for (add it to the set's `classify()`; `'fixed'` = the colour
+stays as it is), keeps the hand-written files (`field-hints.json`, `modules.json`, `contract.json`,
+`measures/`), removes per-value formatting and the logo, and writes template.json (pages, fields, texts,
+colours, icons). Then describe its pages and fields in layout.md and run the test.

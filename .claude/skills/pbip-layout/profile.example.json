@@ -3,6 +3,6 @@
   "pages": ["exec", "map", "product", "customer", "tooltip"],
   "colors": { "dark": "#0B3D5C", "teal": "#F2A900", "gold": "#1C5A80", "bar": "#F7CF66" },
   "theme": true,
-  "title": "Salgsoverblik",
+  "title": "Sales overview",
   "targetGrowth": 0.1
 }

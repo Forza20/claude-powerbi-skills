@@ -35,5 +35,5 @@
  },
  "currencyFormat": "#,0 \"kr.\"",
  "colors": { "primary": "#0B3D5C", "secondary": "#F2A900" },
- "texts": { "BI Library": "Forza BI", "Business Overview": "Forretningsoverblik" }
+ "texts": { "BI Library": "Forza BI", "Business Overview": "Business overview" }
 }

@@ -2,9 +2,9 @@
 """
 sql_lineage.py - Column lineage from SQL files (views, INSERT ... SELECT, CREATE TABLE AS).
 
-Used by build_catalog.py --sql to fill "Opstrøms kilde": a column that Power BI reads from
+Used by build_catalog.py --sql to fill "Upstream source": a column that Power BI reads from
 gold.dim_customers.country is followed back through the SQL that loads it, e.g.
-    silver.erp_loc_a101.cntry ← bronze.erp_loc_a101.cntry (afledt: case when ...)
+    silver.erp_loc_a101.cntry ← bronze.erp_loc_a101.cntry (derived: case when ...)
 
 Supported (regex based, no full SQL parser):
     CREATE [OR REPLACE] [MATERIALIZED] VIEW t [(cols)] AS SELECT ...
@@ -519,13 +519,13 @@ class SqlLineage:
                         nxt.append(r)
             if not nxt:
                 if notes and levels:
-                    levels[-1] += f" (afledt: {'; '.join(notes)})"
+                    levels[-1] += f" (derived: {'; '.join(notes)})"
                 elif notes:
-                    levels.append(f"Beregnet i SQL: {'; '.join(notes)}")
+                    levels.append(f"Calculated in SQL: {'; '.join(notes)}")
                 break
             txt = ' + '.join(f'{a}.{b}' for a, b in nxt)
             if notes:
-                txt += f" (afledt: {'; '.join(notes)})"
+                txt += f" (derived: {'; '.join(notes)})"
             levels.append(txt)
             frontier = nxt
         if csv_cols:

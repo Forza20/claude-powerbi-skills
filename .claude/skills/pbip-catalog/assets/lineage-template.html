@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="da">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -78,8 +78,8 @@
   document.getElementById('title').textContent = 'Lineage · ' + (D.project || '');
   document.getElementById('sub').textContent =
     (D.nodes || []).length + ' objekter · ' + (D.edges || []).length + ' forbindelser · genereret ' +
-    (D.generated || '') + ' af pbip-catalog' + (D.sqlUsed ? '' : ' · uden SQL-filer (kun Power Query)') +
-    '. Klik på en tabel for at se hele dens vej.';
+    (D.generated || '') + ' by pbip-catalog' + (D.sqlUsed ? '' : ' · without SQL files (Power Query only)') +
+    '. Click a table to see its whole path.';
 
   // legend: one entry per kind that occurs
   var seenKind = {}, legend = document.getElementById('legend');
@@ -91,7 +91,7 @@
   });
   if ((D.nodes || []).some(function (n) { return n.unused; })) {
     var s = document.createElement('span'), i = document.createElement('i');
-    i.className = 'dash'; s.appendChild(i); s.appendChild(document.createTextNode('bruges ikke videre'));
+    i.className = 'dash'; s.appendChild(i); s.appendChild(document.createTextNode('not used further'));
     legend.appendChild(s);
   }
 
@@ -133,7 +133,7 @@
   // render
   if (!cols.length) {
     var e = document.createElement('div'); e.className = 'empty';
-    e.textContent = 'Ingen lineage fundet i projektet.'; colsEl.appendChild(e);
+    e.textContent = 'No lineage found in the project.'; colsEl.appendChild(e);
   }
   cols.forEach(function (col) {
     var box = document.createElement('section'); box.className = 'col';
@@ -144,8 +144,8 @@
     col.groups.forEach(function (g) {
       if (showLabels && (g.nodes.length > 1 || !g.target)) {
         var gl = document.createElement('div'); gl.className = 'grp';
-        gl.textContent = g.target ? 'føder ' + g.target.label :
-          (g.nodes.every(function (n) { return n.unused; }) ? 'bruges ikke videre' : 'føder senere lag');
+        gl.textContent = g.target ? 'feeds ' + g.target.label :
+          (g.nodes.every(function (n) { return n.unused; }) ? 'not used further' : 'feeds later layers');
         box.appendChild(gl);
       }
       g.nodes.forEach(function (n) {
