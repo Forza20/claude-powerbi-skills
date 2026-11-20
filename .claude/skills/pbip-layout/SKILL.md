@@ -1,7 +1,6 @@
 ---
 name: pbip-layout
 description: Bygger en af to rapportskabeloner ind i et Power BI PBIP-projekt – AdventureWorks (Exec Dashboard, Map, Product Detail, Customer Detail, Category Tooltip, Q&A, Decomposition Tree, Key Influencers – taget fra adventureworks_report.pbix med farver, navigation, bogmærker og layout) eller Business (Home + modulerne Marketing, Sales og Finance med hver sit overblik og drillthrough; skabelonens measures laves ud fra modellens egne kolonner) og kobler hvert faneblad til projektets egne measures og kolonner. Brugeren vælger altid, hvilke faneblade der skal med; farver kan komme fra HEX-koder eller et screenshot og ændrer kun farverne. Trigger ALTID når brugeren skriver `anvend "layout.md"` (også uden anførselstegn, fx "anvend layout.md") sammen med en PBIP-fil/-mappe eller et åbent PBIP-projekt i Power BI Desktop, og når en pipeline-agent (fx `layout-applier`) bliver bedt om at anvende layoutet – se "Pipeline-tilstand".
-disable-model-invocation: true
 ---
 
 # Anvend rapportskabelonen på et PBIP-projekt
@@ -21,6 +20,10 @@ bogmærker, ikoner; hver farve er en farvenøgle):
 Arbejd med brugeren på brugerens sprog.
 
 ## Forudsætninger
+- Uden for dette repo: installér først Node.js 18+, de to `powerbi-authoring`-skills nedenfor og
+  `powerbi-report-author` CLI (`/plugin marketplace add microsoft/skills-for-fabric`,
+  `/plugin install powerbi-authoring@fabric-collection`). Ingen anden skill er nødvendig for at køre denne;
+  pipeline-tilstand (nedenfor) kræver desuden en orkestrator, der leverer `run.json`.
 - Indlæs skills `powerbi-authoring:semantic-model-authoring` (measures) og
   `powerbi-authoring:powerbi-report-cli` (PBIR, validate, preview), og følg deres regler.
 - `powerbi-report-author` CLI installeret (`npm install -g @microsoft/powerbi-report-authoring-cli@latest`).
